@@ -8477,11 +8477,12 @@ DropRuleStmt:
  *
  *****************************************************************************/
 
-NotifyStmt: NOTIFY ColId notify_payload
+NotifyStmt: NOTIFY all_or_distinct ColId notify_payload
 				{
 					NotifyStmt *n = makeNode(NotifyStmt);
-					n->conditionname = $2;
-					n->payload = $3;
+					n->use_all = $2;
+					n->conditionname = $3;
+					n->payload = $4;
 					$$ = (Node *)n;
 				}
 		;
