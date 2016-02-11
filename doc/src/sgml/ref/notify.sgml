@@ -21,7 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-NOTIFY <replaceable class="PARAMETER">channel</replaceable> [ , <replaceable class="PARAMETER">payload</replaceable> ]
+NOTIFY [ ALL | DISTINCT ] <replaceable class="PARAMETER">channel</replaceable> [ , <replaceable class="PARAMETER">payload</replaceable> ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -104,6 +104,10 @@ NOTIFY <replaceable class="PARAMETER">channel</replaceable> [ , <replaceable cla
    transaction get delivered in the order they were sent.  It is also
    guaranteed that messages from different transactions are delivered in
    the order in which the transactions committed.
+   If <literal>ALL</> is specified (contrary to <literal>DISTINCT</>, the
+   default), the server will deliver all notifications, including duplicates.
+   Removal of duplicate notifications takes place within transaction block,
+   finished with <literal>COMMIT</>, <literal>END</> or <literal>SAVEPOINT</>.
   </para>
 
   <para>
@@ -184,6 +188,12 @@ NOTIFY <replaceable class="PARAMETER">channel</replaceable> [ , <replaceable cla
     to use than the <command>NOTIFY</command> command if you need to work with
     non-constant channel names and payloads.
    </para>
+   <para>
+    There is a three-argument version, <literal>pg_notify(<type>text</>,
+    <type>text</>, <type>boolean</>)</literal>. The third argument acts like
+    the <literal>ALL</> keyword when set to <literal>true</>, and
+    <literal>DISTINCT</> when set to <literal>false</>.
+   </para>
   </refsect2>
  </refsect1>
 
@@ -204,6 +214,21 @@ Asynchronous notification "virtual" with payload "This is the payload" received 
 LISTEN foo;
 SELECT pg_notify('fo' || 'o', 'pay' || 'load');
 Asynchronous notification "foo" with payload "payload" received from server process with PID 14728.
+
+/* Identical messages from same (sub-) transaction can be eliminated - unless you use the ALL keyword */
+LISTEN bar;
+BEGIN;
+NOTIFY bar, 'Coffee please';
+NOTIFY bar, 'Coffee please';
+NOTIFY bar, 'Milk please';
+NOTIFY ALL bar, 'Milk please';
+SAVEPOINT s;
+NOTIFY bar, 'Coffee please';
+COMMIT;
+Asynchronous notification "bar" with payload "Coffee please" received from server process with PID 31517.
+Asynchronous notification "bar" with payload "Milk please" received from server process with PID 31517.
+Asynchronous notification "bar" with payload "Milk please" received from server process with PID 31517.
+Asynchronous notification "bar" with payload "Coffee please" received from server process with PID 31517.
 </programlisting>
   </para>
  </refsect1>
