@@ -533,6 +533,35 @@ pg_notify(PG_FUNCTION_ARGS)
 {
 	const char *channel;
 	const char *payload;
+
+	if (PG_ARGISNULL(0))
+		channel = "";
+	else
+		channel = text_to_cstring(PG_GETARG_TEXT_PP(0));
+
+	if (PG_ARGISNULL(1))
+		payload = "";
+	else
+		payload = text_to_cstring(PG_GETARG_TEXT_PP(1));
+
+	/* For NOTIFY as a statement, this is checked in ProcessUtility */
+	PreventCommandDuringRecovery("NOTIFY");
+
+	Async_Notify(channel, payload, false);
+
+	PG_RETURN_VOID();
+}
+
+
+/*
+ * pg_notify_3args
+ *    SQL function to send a notification event, 3-argument version
+ */
+Datum
+pg_notify_3args(PG_FUNCTION_ARGS)
+{
+	const char *channel;
+	const char *payload;
 	bool use_all;
 
 	if (PG_ARGISNULL(0))
@@ -545,10 +574,10 @@ pg_notify(PG_FUNCTION_ARGS)
 	else
 		payload = text_to_cstring(PG_GETARG_TEXT_PP(1));
 
-	if (PG_NARGS() > 2 && ! PG_ARGISNULL(2))
-		use_all = PG_GETARG_BOOL(2);
-	else
+	if (PG_ARGISNULL(2))
 		use_all = false;
+	else
+		use_all = PG_GETARG_BOOL(2);
 
 	/* For NOTIFY as a statement, this is checked in ProcessUtility */
 	PreventCommandDuringRecovery("NOTIFY");
