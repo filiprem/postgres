@@ -2050,7 +2050,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_XBLOCKS
 		},
 		&XLOGbuffers,
-		-1, -1, INT_MAX,
+		-1, -1, (INT_MAX / XLOG_BLCKSZ),
 		check_wal_buffers, NULL, NULL
 	},
 
@@ -2324,17 +2324,17 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&autovacuum_freeze_max_age,
 		/* see pg_resetxlog if you change the upper-limit value */
-		200000000, 100000000, 2000000000,
+		200000000, 100000, 2000000000,
 		NULL, NULL, NULL
 	},
 	{
-		/* see varsup.c for why this is PGC_POSTMASTER not PGC_SIGHUP */
+		/* see multixact.c for why this is PGC_POSTMASTER not PGC_SIGHUP */
 		{"autovacuum_multixact_freeze_max_age", PGC_POSTMASTER, AUTOVACUUM,
 			gettext_noop("Multixact age at which to autovacuum a table to prevent multixact wraparound."),
 			NULL
 		},
 		&autovacuum_multixact_freeze_max_age,
-		400000000, 10000000, 2000000000,
+		400000000, 10000, 2000000000,
 		NULL, NULL, NULL
 	},
 	{
@@ -2377,7 +2377,7 @@ static struct config_int ConfigureNamesInt[] =
 			GUC_UNIT_KB,
 		},
 		&ssl_renegotiation_limit,
-		512 * 1024, 0, MAX_KILOBYTES,
+		0, 0, MAX_KILOBYTES,
 		NULL, NULL, NULL
 	},
 
@@ -6460,6 +6460,17 @@ init_custom_variable(const char *name,
 	if (context == PGC_POSTMASTER &&
 		!process_shared_preload_libraries_in_progress)
 		elog(FATAL, "cannot create PGC_POSTMASTER variables after startup");
+
+	/*
+	 * Before pljava commit 398f3b876ed402bdaec8bc804f29e2be95c75139
+	 * (2015-12-15), two of that module's PGC_USERSET variables facilitated
+	 * trivial escalation to superuser privileges.  Restrict the variables to
+	 * protect sites that have yet to upgrade pljava.
+	 */
+	if (context == PGC_USERSET &&
+		(strcmp(name, "pljava.classpath") == 0 ||
+		 strcmp(name, "pljava.vmoptions") == 0))
+		context = PGC_SUSET;
 
 	gen = (struct config_generic *) guc_malloc(ERROR, sz);
 	memset(gen, 0, sz);

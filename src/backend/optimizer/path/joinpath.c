@@ -29,19 +29,19 @@ static void sort_inner_and_outer(PlannerInfo *root, RelOptInfo *joinrel,
 					 RelOptInfo *outerrel, RelOptInfo *innerrel,
 					 List *restrictlist, List *mergeclause_list,
 					 JoinType jointype, SpecialJoinInfo *sjinfo,
-					 Relids param_source_rels, Relids extra_lateral_rels);
+					 Relids param_source_rels);
 static void match_unsorted_outer(PlannerInfo *root, RelOptInfo *joinrel,
 					 RelOptInfo *outerrel, RelOptInfo *innerrel,
 					 List *restrictlist, List *mergeclause_list,
 					 JoinType jointype, SpecialJoinInfo *sjinfo,
 					 SemiAntiJoinFactors *semifactors,
-					 Relids param_source_rels, Relids extra_lateral_rels);
+					 Relids param_source_rels);
 static void hash_inner_and_outer(PlannerInfo *root, RelOptInfo *joinrel,
 					 RelOptInfo *outerrel, RelOptInfo *innerrel,
 					 List *restrictlist,
 					 JoinType jointype, SpecialJoinInfo *sjinfo,
 					 SemiAntiJoinFactors *semifactors,
-					 Relids param_source_rels, Relids extra_lateral_rels);
+					 Relids param_source_rels);
 static List *select_mergejoin_clauses(PlannerInfo *root,
 						 RelOptInfo *joinrel,
 						 RelOptInfo *outerrel,
@@ -87,7 +87,6 @@ add_paths_to_joinrel(PlannerInfo *root,
 	bool		mergejoin_allowed = true;
 	SemiAntiJoinFactors semifactors;
 	Relids		param_source_rels = NULL;
-	Relids		extra_lateral_rels = NULL;
 	ListCell   *lc;
 
 	/*
@@ -120,7 +119,7 @@ add_paths_to_joinrel(PlannerInfo *root,
 	 * is usually no need to create a parameterized result path unless there
 	 * is a join order restriction that prevents joining one of our input rels
 	 * directly to the parameter source rel instead of joining to the other
-	 * input rel.  (But see exception in try_nestloop_path.)  This restriction
+	 * input rel.  (But see allow_star_schema_join().)	This restriction
 	 * reduces the number of parameterized paths we have to deal with at
 	 * higher join levels, without compromising the quality of the resulting
 	 * plan.  We express the restriction as a Relids set that must overlap the
@@ -153,59 +152,14 @@ add_paths_to_joinrel(PlannerInfo *root,
 	}
 
 	/*
-	 * However, when a LATERAL subquery is involved, we have to be a bit
-	 * laxer, because there will simply not be any paths for the joinrel that
-	 * aren't parameterized by whatever the subquery is parameterized by,
-	 * unless its parameterization is resolved within the joinrel.  Hence, add
-	 * to param_source_rels anything that is laterally referenced in either
-	 * input and is not in the join already.
+	 * However, when a LATERAL subquery is involved, there will simply not be
+	 * any paths for the joinrel that aren't parameterized by whatever the
+	 * subquery is parameterized by, unless its parameterization is resolved
+	 * within the joinrel.  So we might as well allow additional dependencies
+	 * on whatever residual lateral dependencies the joinrel will have.
 	 */
-	foreach(lc, root->lateral_info_list)
-	{
-		LateralJoinInfo *ljinfo = (LateralJoinInfo *) lfirst(lc);
-
-		if (bms_is_subset(ljinfo->lateral_rhs, joinrel->relids))
-			param_source_rels = bms_join(param_source_rels,
-										 bms_difference(ljinfo->lateral_lhs,
-														joinrel->relids));
-	}
-
-	/*
-	 * Another issue created by LATERAL references is that PlaceHolderVars
-	 * that need to be computed at this join level might contain lateral
-	 * references to rels not in the join, meaning that the paths for the join
-	 * would need to be marked as parameterized by those rels, independently
-	 * of all other considerations.  Set extra_lateral_rels to the set of such
-	 * rels.  This will not affect our decisions as to which paths to
-	 * generate; we merely add these rels to their required_outer sets.
-	 */
-	foreach(lc, root->placeholder_list)
-	{
-		PlaceHolderInfo *phinfo = (PlaceHolderInfo *) lfirst(lc);
-
-		/* PHVs without lateral refs can be skipped over quickly */
-		if (phinfo->ph_lateral == NULL)
-			continue;
-		/* Is it due to be evaluated at this join, and not in either input? */
-		if (bms_is_subset(phinfo->ph_eval_at, joinrel->relids) &&
-			!bms_is_subset(phinfo->ph_eval_at, outerrel->relids) &&
-			!bms_is_subset(phinfo->ph_eval_at, innerrel->relids))
-		{
-			/* Yes, remember its lateral rels */
-			extra_lateral_rels = bms_add_members(extra_lateral_rels,
-												 phinfo->ph_lateral);
-		}
-	}
-
-	/*
-	 * Make sure extra_lateral_rels doesn't list anything within the join, and
-	 * that it's NULL if empty.  (This allows us to use bms_add_members to add
-	 * it to required_outer below, while preserving the property that
-	 * required_outer is exactly NULL if empty.)
-	 */
-	extra_lateral_rels = bms_del_members(extra_lateral_rels, joinrel->relids);
-	if (bms_is_empty(extra_lateral_rels))
-		extra_lateral_rels = NULL;
+	param_source_rels = bms_add_members(param_source_rels,
+										joinrel->lateral_relids);
 
 	/*
 	 * 1. Consider mergejoin paths where both relations must be explicitly
@@ -215,7 +169,7 @@ add_paths_to_joinrel(PlannerInfo *root,
 		sort_inner_and_outer(root, joinrel, outerrel, innerrel,
 							 restrictlist, mergeclause_list, jointype,
 							 sjinfo,
-							 param_source_rels, extra_lateral_rels);
+							 param_source_rels);
 
 	/*
 	 * 2. Consider paths where the outer relation need not be explicitly
@@ -228,7 +182,7 @@ add_paths_to_joinrel(PlannerInfo *root,
 		match_unsorted_outer(root, joinrel, outerrel, innerrel,
 							 restrictlist, mergeclause_list, jointype,
 							 sjinfo, &semifactors,
-							 param_source_rels, extra_lateral_rels);
+							 param_source_rels);
 
 #ifdef NOT_USED
 
@@ -247,7 +201,7 @@ add_paths_to_joinrel(PlannerInfo *root,
 		match_unsorted_inner(root, joinrel, outerrel, innerrel,
 							 restrictlist, mergeclause_list, jointype,
 							 sjinfo, &semifactors,
-							 param_source_rels, extra_lateral_rels);
+							 param_source_rels);
 #endif
 
 	/*
@@ -259,7 +213,38 @@ add_paths_to_joinrel(PlannerInfo *root,
 		hash_inner_and_outer(root, joinrel, outerrel, innerrel,
 							 restrictlist, jointype,
 							 sjinfo, &semifactors,
-							 param_source_rels, extra_lateral_rels);
+							 param_source_rels);
+}
+
+/*
+ * We override the param_source_rels heuristic to accept nestloop paths in
+ * which the outer rel satisfies some but not all of the inner path's
+ * parameterization.  This is necessary to get good plans for star-schema
+ * scenarios, in which a parameterized path for a large table may require
+ * parameters from multiple small tables that will not get joined directly to
+ * each other.  We can handle that by stacking nestloops that have the small
+ * tables on the outside; but this breaks the rule the param_source_rels
+ * heuristic is based on, namely that parameters should not be passed down
+ * across joins unless there's a join-order-constraint-based reason to do so.
+ * So we ignore the param_source_rels restriction when this case applies.
+ *
+ * allow_star_schema_join() returns TRUE if the param_source_rels restriction
+ * should be overridden, ie, it's okay to perform this join.
+ */
+static inline bool
+allow_star_schema_join(PlannerInfo *root,
+					   Path *outer_path,
+					   Path *inner_path)
+{
+	Relids		innerparams = PATH_REQ_OUTER(inner_path);
+	Relids		outerrelids = outer_path->parent->relids;
+
+	/*
+	 * It's a star-schema case if the outer rel provides some but not all of
+	 * the inner rel's parameterization.
+	 */
+	return (bms_overlap(innerparams, outerrelids) &&
+			bms_nonempty_difference(innerparams, outerrelids));
 }
 
 /*
@@ -274,7 +259,6 @@ try_nestloop_path(PlannerInfo *root,
 				  SpecialJoinInfo *sjinfo,
 				  SemiAntiJoinFactors *semifactors,
 				  Relids param_source_rels,
-				  Relids extra_lateral_rels,
 				  Path *outer_path,
 				  Path *inner_path,
 				  List *restrict_clauses,
@@ -285,43 +269,24 @@ try_nestloop_path(PlannerInfo *root,
 
 	/*
 	 * Check to see if proposed path is still parameterized, and reject if the
-	 * parameterization wouldn't be sensible.
+	 * parameterization wouldn't be sensible --- unless allow_star_schema_join
+	 * says to allow it anyway.  Also, we must reject if have_dangerous_phv
+	 * doesn't like the look of it, which could only happen if the nestloop is
+	 * still parameterized.
 	 */
 	required_outer = calc_nestloop_required_outer(outer_path,
 												  inner_path);
 	if (required_outer &&
-		!bms_overlap(required_outer, param_source_rels))
+		((!bms_overlap(required_outer, param_source_rels) &&
+		  !allow_star_schema_join(root, outer_path, inner_path)) ||
+		 have_dangerous_phv(root,
+							outer_path->parent->relids,
+							PATH_REQ_OUTER(inner_path))))
 	{
-		/*
-		 * We override the param_source_rels heuristic to accept nestloop
-		 * paths in which the outer rel satisfies some but not all of the
-		 * inner path's parameterization.  This is necessary to get good plans
-		 * for star-schema scenarios, in which a parameterized path for a
-		 * large table may require parameters from multiple small tables that
-		 * will not get joined directly to each other.  We can handle that by
-		 * stacking nestloops that have the small tables on the outside; but
-		 * this breaks the rule the param_source_rels heuristic is based on,
-		 * namely that parameters should not be passed down across joins
-		 * unless there's a join-order-constraint-based reason to do so.  So
-		 * ignore the param_source_rels restriction when this case applies.
-		 */
-		Relids		outerrelids = outer_path->parent->relids;
-		Relids		innerparams = PATH_REQ_OUTER(inner_path);
-
-		if (!(bms_overlap(innerparams, outerrelids) &&
-			  bms_nonempty_difference(innerparams, outerrelids)))
-		{
-			/* Waste no memory when we reject a path here */
-			bms_free(required_outer);
-			return;
-		}
+		/* Waste no memory when we reject a path here */
+		bms_free(required_outer);
+		return;
 	}
-
-	/*
-	 * Independently of that, add parameterization needed for any
-	 * PlaceHolderVars that need to be computed at the join.
-	 */
-	required_outer = bms_add_members(required_outer, extra_lateral_rels);
 
 	/*
 	 * Do a precheck to quickly eliminate obviously-inferior paths.  We
@@ -371,7 +336,6 @@ try_mergejoin_path(PlannerInfo *root,
 				   JoinType jointype,
 				   SpecialJoinInfo *sjinfo,
 				   Relids param_source_rels,
-				   Relids extra_lateral_rels,
 				   Path *outer_path,
 				   Path *inner_path,
 				   List *restrict_clauses,
@@ -396,12 +360,6 @@ try_mergejoin_path(PlannerInfo *root,
 		bms_free(required_outer);
 		return;
 	}
-
-	/*
-	 * Independently of that, add parameterization needed for any
-	 * PlaceHolderVars that need to be computed at the join.
-	 */
-	required_outer = bms_add_members(required_outer, extra_lateral_rels);
 
 	/*
 	 * If the given paths are already well enough ordered, we can skip doing
@@ -460,7 +418,6 @@ try_hashjoin_path(PlannerInfo *root,
 				  SpecialJoinInfo *sjinfo,
 				  SemiAntiJoinFactors *semifactors,
 				  Relids param_source_rels,
-				  Relids extra_lateral_rels,
 				  Path *outer_path,
 				  Path *inner_path,
 				  List *restrict_clauses,
@@ -482,12 +439,6 @@ try_hashjoin_path(PlannerInfo *root,
 		bms_free(required_outer);
 		return;
 	}
-
-	/*
-	 * Independently of that, add parameterization needed for any
-	 * PlaceHolderVars that need to be computed at the join.
-	 */
-	required_outer = bms_add_members(required_outer, extra_lateral_rels);
 
 	/*
 	 * See comments in try_nestloop_path().  Also note that hashjoin paths
@@ -567,7 +518,6 @@ clause_sides_match_join(RestrictInfo *rinfo, RelOptInfo *outerrel,
  * 'jointype' is the type of join to do
  * 'sjinfo' is extra info about the join for selectivity estimation
  * 'param_source_rels' are OK targets for parameterization of result paths
- * 'extra_lateral_rels' are additional parameterization for result paths
  */
 static void
 sort_inner_and_outer(PlannerInfo *root,
@@ -578,8 +528,7 @@ sort_inner_and_outer(PlannerInfo *root,
 					 List *mergeclause_list,
 					 JoinType jointype,
 					 SpecialJoinInfo *sjinfo,
-					 Relids param_source_rels,
-					 Relids extra_lateral_rels)
+					 Relids param_source_rels)
 {
 	Path	   *outer_path;
 	Path	   *inner_path;
@@ -709,7 +658,6 @@ sort_inner_and_outer(PlannerInfo *root,
 						   jointype,
 						   sjinfo,
 						   param_source_rels,
-						   extra_lateral_rels,
 						   outer_path,
 						   inner_path,
 						   restrictlist,
@@ -755,7 +703,6 @@ sort_inner_and_outer(PlannerInfo *root,
  * 'sjinfo' is extra info about the join for selectivity estimation
  * 'semifactors' contains valid data if jointype is SEMI or ANTI
  * 'param_source_rels' are OK targets for parameterization of result paths
- * 'extra_lateral_rels' are additional parameterization for result paths
  */
 static void
 match_unsorted_outer(PlannerInfo *root,
@@ -767,8 +714,7 @@ match_unsorted_outer(PlannerInfo *root,
 					 JoinType jointype,
 					 SpecialJoinInfo *sjinfo,
 					 SemiAntiJoinFactors *semifactors,
-					 Relids param_source_rels,
-					 Relids extra_lateral_rels)
+					 Relids param_source_rels)
 {
 	JoinType	save_jointype = jointype;
 	bool		nestjoinOK;
@@ -898,7 +844,6 @@ match_unsorted_outer(PlannerInfo *root,
 							  sjinfo,
 							  semifactors,
 							  param_source_rels,
-							  extra_lateral_rels,
 							  outerpath,
 							  inner_cheapest_total,
 							  restrictlist,
@@ -924,7 +869,6 @@ match_unsorted_outer(PlannerInfo *root,
 								  sjinfo,
 								  semifactors,
 								  param_source_rels,
-								  extra_lateral_rels,
 								  outerpath,
 								  innerpath,
 								  restrictlist,
@@ -939,7 +883,6 @@ match_unsorted_outer(PlannerInfo *root,
 								  sjinfo,
 								  semifactors,
 								  param_source_rels,
-								  extra_lateral_rels,
 								  outerpath,
 								  matpath,
 								  restrictlist,
@@ -995,7 +938,6 @@ match_unsorted_outer(PlannerInfo *root,
 						   jointype,
 						   sjinfo,
 						   param_source_rels,
-						   extra_lateral_rels,
 						   outerpath,
 						   inner_cheapest_total,
 						   restrictlist,
@@ -1094,7 +1036,6 @@ match_unsorted_outer(PlannerInfo *root,
 								   jointype,
 								   sjinfo,
 								   param_source_rels,
-								   extra_lateral_rels,
 								   outerpath,
 								   innerpath,
 								   restrictlist,
@@ -1140,7 +1081,6 @@ match_unsorted_outer(PlannerInfo *root,
 									   jointype,
 									   sjinfo,
 									   param_source_rels,
-									   extra_lateral_rels,
 									   outerpath,
 									   innerpath,
 									   restrictlist,
@@ -1175,7 +1115,6 @@ match_unsorted_outer(PlannerInfo *root,
  * 'sjinfo' is extra info about the join for selectivity estimation
  * 'semifactors' contains valid data if jointype is SEMI or ANTI
  * 'param_source_rels' are OK targets for parameterization of result paths
- * 'extra_lateral_rels' are additional parameterization for result paths
  */
 static void
 hash_inner_and_outer(PlannerInfo *root,
@@ -1186,8 +1125,7 @@ hash_inner_and_outer(PlannerInfo *root,
 					 JoinType jointype,
 					 SpecialJoinInfo *sjinfo,
 					 SemiAntiJoinFactors *semifactors,
-					 Relids param_source_rels,
-					 Relids extra_lateral_rels)
+					 Relids param_source_rels)
 {
 	bool		isouterjoin = IS_OUTER_JOIN(jointype);
 	List	   *hashclauses;
@@ -1261,7 +1199,6 @@ hash_inner_and_outer(PlannerInfo *root,
 							  sjinfo,
 							  semifactors,
 							  param_source_rels,
-							  extra_lateral_rels,
 							  cheapest_total_outer,
 							  cheapest_total_inner,
 							  restrictlist,
@@ -1281,7 +1218,6 @@ hash_inner_and_outer(PlannerInfo *root,
 							  sjinfo,
 							  semifactors,
 							  param_source_rels,
-							  extra_lateral_rels,
 							  cheapest_total_outer,
 							  cheapest_total_inner,
 							  restrictlist,
@@ -1294,7 +1230,6 @@ hash_inner_and_outer(PlannerInfo *root,
 								  sjinfo,
 								  semifactors,
 								  param_source_rels,
-								  extra_lateral_rels,
 								  cheapest_startup_outer,
 								  cheapest_total_inner,
 								  restrictlist,
@@ -1319,7 +1254,6 @@ hash_inner_and_outer(PlannerInfo *root,
 								  sjinfo,
 								  semifactors,
 								  param_source_rels,
-								  extra_lateral_rels,
 								  cheapest_startup_outer,
 								  cheapest_total_inner,
 								  restrictlist,
@@ -1357,7 +1291,6 @@ hash_inner_and_outer(PlannerInfo *root,
 									  sjinfo,
 									  semifactors,
 									  param_source_rels,
-									  extra_lateral_rels,
 									  outerpath,
 									  innerpath,
 									  restrictlist,

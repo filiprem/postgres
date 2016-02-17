@@ -91,6 +91,8 @@ extern RelOptInfo *make_join_rel(PlannerInfo *root,
 			  RelOptInfo *rel1, RelOptInfo *rel2);
 extern bool have_join_order_restriction(PlannerInfo *root,
 							RelOptInfo *rel1, RelOptInfo *rel2);
+extern bool have_dangerous_phv(PlannerInfo *root,
+				   Relids outer_relids, Relids inner_params);
 
 /*
  * equivclass.c
@@ -139,7 +141,8 @@ extern bool have_relevant_eclass_joinclause(PlannerInfo *root,
 								RelOptInfo *rel1, RelOptInfo *rel2);
 extern bool has_relevant_eclass_joinclause(PlannerInfo *root,
 							   RelOptInfo *rel1);
-extern bool eclass_useful_for_merging(EquivalenceClass *eclass,
+extern bool eclass_useful_for_merging(PlannerInfo *root,
+						  EquivalenceClass *eclass,
 						  RelOptInfo *rel);
 extern bool is_redundant_derived_clause(RestrictInfo *rinfo, List *clauselist);
 

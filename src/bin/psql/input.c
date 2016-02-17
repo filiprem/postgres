@@ -65,6 +65,17 @@ gets_interactive(const char *prompt)
 	{
 		char	   *result;
 
+		/*
+		 * Some versions of readline don't notice SIGWINCH signals that arrive
+		 * when not actively reading input.  The simplest fix is to always
+		 * re-read the terminal size.  This leaves a window for SIGWINCH to be
+		 * missed between here and where readline() enables libreadline's
+		 * signal handler, but that's probably short enough to be ignored.
+		 */
+#ifdef HAVE_RL_RESET_SCREEN_SIZE
+		rl_reset_screen_size();
+#endif
+
 		/* Enable SIGINT to longjmp to sigint_interrupt_jmp */
 		sigint_interrupt_enabled = true;
 
@@ -330,7 +341,10 @@ initializeInput(int flags)
 		char		home[MAXPGPATH];
 
 		useReadline = true;
+
+		/* these two things must be done in this order: */
 		initialize_readline();
+		rl_initialize();
 
 		useHistory = true;
 		using_history();
@@ -382,10 +396,10 @@ initializeInput(int flags)
  *
  * max_lines: if >= 0, limit history file to that many entries.
  */
+#ifdef USE_READLINE
 static bool
 saveHistory(char *fname, int max_lines)
 {
-#ifdef USE_READLINE
 	int			errnum;
 
 	/*
@@ -450,10 +464,10 @@ saveHistory(char *fname, int max_lines)
 		psql_error("could not save history to file \"%s\": %s\n",
 				   fname, strerror(errnum));
 	}
-#endif
-
 	return false;
 }
+#endif
+
 
 
 /*

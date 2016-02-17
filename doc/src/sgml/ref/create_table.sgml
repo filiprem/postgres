@@ -493,25 +493,25 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
     <term><literal>PRIMARY KEY ( <replaceable class="PARAMETER">column_name</replaceable> [, ... ] )</> (table constraint)</term>
     <listitem>
      <para>
-      The primary key constraint specifies that a column or columns of a table
-      can contain only unique (non-duplicate), nonnull values.
-      Technically, <literal>PRIMARY KEY</literal> is merely a
-      combination of <literal>UNIQUE</> and <literal>NOT NULL</>, but
-      identifying a set of columns as primary key also provides
-      metadata about the design of the schema, as a primary key
-      implies that other tables
-      can rely on this set of columns as a unique identifier for rows.
-     </para>
-
-     <para>
-      Only one primary key can be specified for a table, whether as a
+      The <literal>PRIMARY KEY</> constraint specifies that a column or
+      columns of a table can contain only unique (non-duplicate), nonnull
+      values. Only one primary key can be specified for a table, whether as a
       column constraint or a table constraint.
      </para>
 
      <para>
       The primary key constraint should name a set of columns that is
-      different from other sets of columns named by any unique
-      constraint defined for the same table.
+      different from the set of columns named by any unique
+      constraint defined for the same table.  (Otherwise, the unique
+      constraint is redundant and will be discarded.)
+     </para>
+
+     <para>
+      <literal>PRIMARY KEY</literal> enforces the same data constraints as
+      a combination of <literal>UNIQUE</> and <literal>NOT NULL</>, but
+      identifying a set of columns as the primary key also provides metadata
+      about the design of the schema, since a primary key implies that other
+      tables can rely on this set of columns as a unique identifier for rows.
      </para>
     </listitem>
    </varlistentry>
@@ -994,9 +994,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
      Custom <xref linkend="guc-autovacuum-freeze-max-age"> parameter. Note that
      autovacuum will ignore attempts to set a per-table
      <literal>autovacuum_freeze_max_age</> larger than the system-wide setting
-     (it can only be set smaller). Note that while you can set
-     <literal>autovacuum_freeze_max_age</> very small, or even zero, this is
-     usually unwise since it will force frequent vacuuming.
+     (it can only be set smaller).
      </para>
     </listitem>
    </varlistentry>
@@ -1030,10 +1028,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
       Custom <xref linkend="guc-autovacuum-multixact-freeze-max-age"> parameter. Note
       that autovacuum will ignore attempts to set a per-table
       <literal>autovacuum_multixact_freeze_max_age</> larger than the
-      system-wide setting (it can only be set smaller).  Note that while you
-      can set <literal>autovacuum_multixact_freeze_max_age</> very small,
-      or even zero, this is usually unwise since it will force frequent
-      vacuuming.
+      system-wide setting (it can only be set smaller).
      </para>
     </listitem>
    </varlistentry>
