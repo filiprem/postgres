@@ -526,7 +526,42 @@ pg_notify(PG_FUNCTION_ARGS)
 	/* For NOTIFY as a statement, this is checked in ProcessUtility */
 	PreventCommandDuringRecovery("NOTIFY");
 
-	Async_Notify(channel, payload);
+	Async_Notify(channel, payload, false);
+
+	PG_RETURN_VOID();
+}
+
+
+/*
+ * pg_notify_3args
+ *    SQL function to send a notification event, 3-argument version
+ */
+Datum
+pg_notify_3args(PG_FUNCTION_ARGS)
+{
+	const char *channel;
+	const char *payload;
+	bool use_all;
+
+	if (PG_ARGISNULL(0))
+		channel = "";
+	else
+		channel = text_to_cstring(PG_GETARG_TEXT_PP(0));
+
+	if (PG_ARGISNULL(1))
+		payload = "";
+	else
+		payload = text_to_cstring(PG_GETARG_TEXT_PP(1));
+
+	if (PG_ARGISNULL(2))
+		use_all = false;
+	else
+		use_all = PG_GETARG_BOOL(2);
+
+	/* For NOTIFY as a statement, this is checked in ProcessUtility */
+	PreventCommandDuringRecovery("NOTIFY");
+
+	Async_Notify(channel, payload, use_all);
 
 	PG_RETURN_VOID();
 }
@@ -542,7 +577,7 @@ pg_notify(PG_FUNCTION_ARGS)
  *		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
  */
 void
-Async_Notify(const char *channel, const char *payload)
+Async_Notify(const char *channel, const char *payload, bool use_all)
 {
 	Notification *n;
 	MemoryContext oldcontext;
@@ -569,9 +604,10 @@ Async_Notify(const char *channel, const char *payload)
 					 errmsg("payload string too long")));
 	}
 
-	/* no point in making duplicate entries in the list ... */
-	if (AsyncExistsPendingNotify(channel, payload))
-		return;
+	if (!use_all)
+		/* remove duplicate entries in the list */
+		if (AsyncExistsPendingNotify(channel, payload))
+			return;
 
 	/*
 	 * The notification list needs to live until end of transaction, so store
