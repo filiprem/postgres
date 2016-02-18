@@ -3819,7 +3819,7 @@ DATA(insert OID = 3035 (  pg_listening_channels PGNSP PGUID 12 1 10 0 0 f f f f 
 DESCR("get the channels that the current backend listens to");
 DATA(insert OID = 3036 (  pg_notify				PGNSP PGUID 12 1 0 0 0 f f f f f f v 2 0 2278 "25 25" _null_ _null_ _null_ _null_ pg_notify _null_ _null_ _null_ ));
 DESCR("send a notification event");
-DATA(insert OID = 3177 (  pg_notify				PGNSP PGUID 12 1 0 0 0 f f f f f f v 3 0 2278 "25 25 16" _null_ _null_ _null_ _null_ pg_notify _null_ _null_ _null_ ));
+DATA(insert OID = 3177 (  pg_notify				PGNSP PGUID 12 1 0 0 0 f f f f f f v 3 0 2278 "25 25 16" _null_ _null_ _null_ _null_ pg_notify_3args _null_ _null_ _null_ ));
 DESCR("send a notification event");
 
 /* non-persistent series generator */
