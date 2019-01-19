@@ -3,7 +3,7 @@
  * indexcmds.c
  *	  POSTGRES define and remove index code.
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -16,6 +16,7 @@
 #include "postgres.h"
 
 #include "access/amapi.h"
+#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/reloptions.h"
 #include "access/sysattr.h"
@@ -224,7 +225,7 @@ CheckIndexCompatible(Oid oldId,
 	 */
 	if (!(heap_attisnull(tuple, Anum_pg_index_indpred, NULL) &&
 		  heap_attisnull(tuple, Anum_pg_index_indexprs, NULL) &&
-		  IndexIsValid(indexForm)))
+		  indexForm->indisvalid))
 	{
 		ReleaseSysCache(tuple);
 		return false;
@@ -415,7 +416,6 @@ DefineIndex(Oid relationId,
 	lockmode = stmt->concurrent ? ShareUpdateExclusiveLock : ShareLock;
 	rel = heap_open(relationId, lockmode);
 
-	relationId = RelationGetRelid(rel);
 	namespaceId = RelationGetNamespace(rel);
 
 	/* Ensure that it makes sense to index this kind of relation */
@@ -722,7 +722,7 @@ DefineIndex(Oid relationId,
 						 errdetail("%s constraints cannot be used when partition keys include expressions.",
 								   constraint_type)));
 
-			for (j = 0; j < indexInfo->ii_NumIndexAttrs; j++)
+			for (j = 0; j < indexInfo->ii_NumIndexKeyAttrs; j++)
 			{
 				if (key->partattrs[i] == indexInfo->ii_IndexAttrNumbers[j])
 				{
@@ -976,7 +976,7 @@ DefineIndex(Oid relationId,
 							ConstraintSetParentConstraint(cldConstrOid,
 														  createdConstraintId);
 
-						if (!IndexIsValid(cldidx->rd_index))
+						if (!cldidx->rd_index->indisvalid)
 							invalidate_parent = true;
 
 						found = true;
@@ -1032,7 +1032,7 @@ DefineIndex(Oid relationId,
 						elog(ERROR, "cannot convert whole-row table reference");
 
 					childStmt->idxname = NULL;
-					childStmt->relationId = childRelid;
+					childStmt->relation = NULL;
 					DefineIndex(childRelid, childStmt,
 								InvalidOid, /* no predefined OID */
 								indexRelationId,	/* this is our child */
@@ -1154,7 +1154,7 @@ DefineIndex(Oid relationId,
 	 */
 
 	/* Open and lock the parent heap relation */
-	rel = heap_openrv(stmt->relation, ShareUpdateExclusiveLock);
+	rel = heap_open(relationId, ShareUpdateExclusiveLock);
 
 	/* And the target index relation */
 	indexRelation = index_open(indexRelationId, RowExclusiveLock);

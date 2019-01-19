@@ -3,7 +3,7 @@
  * heap.c
  *	  code to create and destroy POSTGRES heap relations
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -29,6 +29,8 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
+#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/multixact.h"
 #include "access/sysattr.h"
@@ -324,35 +326,25 @@ heap_create(const char *relname,
 						get_namespace_name(relnamespace), relname),
 				 errdetail("System catalog modifications are currently disallowed.")));
 
-	/*
-	 * Decide if we need storage or not, and handle a couple other special
-	 * cases for particular relkinds.
-	 */
+	/* Handle reltablespace for specific relkinds. */
 	switch (relkind)
 	{
 		case RELKIND_VIEW:
 		case RELKIND_COMPOSITE_TYPE:
 		case RELKIND_FOREIGN_TABLE:
-			create_storage = false;
 
 			/*
 			 * Force reltablespace to zero if the relation has no physical
 			 * storage.  This is mainly just for cleanliness' sake.
+			 *
+			 * Partitioned tables and indexes don't have physical storage
+			 * either, but we want to keep their tablespace settings so that
+			 * their children can inherit it.
 			 */
 			reltablespace = InvalidOid;
 			break;
 
-		case RELKIND_PARTITIONED_TABLE:
-		case RELKIND_PARTITIONED_INDEX:
-			/*
-			 * For partitioned tables and indexes, preserve tablespace so that
-			 * it's used as the tablespace for future partitions.
-			 */
-			create_storage = false;
-			break;
-
 		case RELKIND_SEQUENCE:
-			create_storage = true;
 
 			/*
 			 * Force reltablespace to zero for sequences, since we don't
@@ -361,19 +353,21 @@ heap_create(const char *relname,
 			reltablespace = InvalidOid;
 			break;
 		default:
-			create_storage = true;
 			break;
 	}
 
 	/*
-	 * Unless otherwise requested, the physical ID (relfilenode) is initially
-	 * the same as the logical ID (OID).  When the caller did specify a
-	 * relfilenode, it already exists; do not attempt to create it.
+	 * Decide whether to create storage. If caller passed a valid relfilenode,
+	 * storage is already created, so don't do it here.  Also don't create it
+	 * for relkinds without physical storage.
 	 */
-	if (OidIsValid(relfilenode))
+	if (!RELKIND_HAS_STORAGE(relkind) || OidIsValid(relfilenode))
 		create_storage = false;
 	else
+	{
+		create_storage = true;
 		relfilenode = relid;
+	}
 
 	/*
 	 * Never allow a pg_class entry to explicitly specify the database's

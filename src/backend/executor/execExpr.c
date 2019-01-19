@@ -19,7 +19,7 @@
  *	and "Expression Evaluation" sections.
  *
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -3314,8 +3314,8 @@ ExprState *
 ExecBuildGroupingEqual(TupleDesc ldesc, TupleDesc rdesc,
 					   const TupleTableSlotOps *lops, const TupleTableSlotOps *rops,
 					   int numCols,
-					   AttrNumber *keyColIdx,
-					   Oid *eqfunctions,
+					   const AttrNumber *keyColIdx,
+					   const Oid *eqfunctions,
 					   PlanState *parent)
 {
 	ExprState  *state = makeNode(ExprState);

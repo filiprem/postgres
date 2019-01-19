@@ -6,7 +6,7 @@
  * See src/backend/utils/misc/README for more information.
  *
  *
- * Copyright (c) 2000-2018, PostgreSQL Global Development Group
+ * Copyright (c) 2000-2019, PostgreSQL Global Development Group
  * Written by Peter Eisentraut <peter_e@gmx.net>.
  *
  * IDENTIFICATION
@@ -209,6 +209,7 @@ static void assign_recovery_target_name(const char *newval, void *extra);
 static bool check_recovery_target_lsn(char **newval, void **extra, GucSource source);
 static void assign_recovery_target_lsn(const char *newval, void *extra);
 static bool check_primary_slot_name(char **newval, void **extra, GucSource source);
+static bool check_default_with_oids(bool *newval, void **extra, GucSource source);
 
 /* Private functions in guc-file.l that need to be called from guc.c */
 static ConfigVariable *ProcessConfigFileInternal(GucContext context,
@@ -479,6 +480,12 @@ char	   *event_source;
 
 bool		row_security;
 bool		check_function_bodies = true;
+
+/*
+ * This GUC exists solely for backward compatibility, check its definition for
+ * details.
+ */
+bool		default_with_oids = false;
 bool		session_auth_is_superuser;
 
 int			log_min_error_statement = ERROR;
@@ -1537,6 +1544,21 @@ static struct config_bool ConfigureNamesBool[] =
 		&Array_nulls,
 		true,
 		NULL, NULL, NULL
+	},
+	/*
+	 * WITH OIDS support, and consequently default_with_oids, was removed in
+	 * PostgreSQL 12, but we tolerate the parameter being set to false to
+	 * avoid unnecessarily breaking older dump files.
+	 */
+	{
+		{"default_with_oids", PGC_USERSET, COMPAT_OPTIONS_PREVIOUS,
+			gettext_noop("WITH OIDS is no longer supported; this can only be false."),
+			NULL,
+			GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
+		},
+		&default_with_oids,
+		false,
+		check_default_with_oids, NULL, NULL
 	},
 	{
 		{"logging_collector", PGC_POSTMASTER, LOGGING_WHERE,
@@ -3387,7 +3409,7 @@ static struct config_string ConfigureNamesString[] =
 			NULL
 		},
 		&recovery_target_timeline_string,
-		"",
+		"latest",
 		check_recovery_target_timeline, assign_recovery_target_timeline, NULL
 	},
 
@@ -11028,15 +11050,17 @@ show_data_directory_mode(void)
 static bool
 check_recovery_target_timeline(char **newval, void **extra, GucSource source)
 {
-	RecoveryTargetTimeLineGoal rttg = RECOVERY_TARGET_TIMELINE_CONTROLFILE;
+	RecoveryTargetTimeLineGoal rttg;
 	RecoveryTargetTimeLineGoal *myextra;
 
-	if (strcmp(*newval, "") == 0)
+	if (strcmp(*newval, "current") == 0)
 		rttg = RECOVERY_TARGET_TIMELINE_CONTROLFILE;
 	else if (strcmp(*newval, "latest") == 0)
 		rttg = RECOVERY_TARGET_TIMELINE_LATEST;
 	else
 	{
+		rttg = RECOVERY_TARGET_TIMELINE_NUMERIC;
+
 		errno = 0;
 		strtoul(*newval, NULL, 0);
 		if (errno == EINVAL || errno == ERANGE)
@@ -11044,7 +11068,6 @@ check_recovery_target_timeline(char **newval, void **extra, GucSource source)
 			GUC_check_errdetail("recovery_target_timeline is not a valid number.");
 			return false;
 		}
-		rttg = RECOVERY_TARGET_TIMELINE_NUMERIC;
 	}
 
 	myextra = (RecoveryTargetTimeLineGoal *) guc_malloc(ERROR, sizeof(RecoveryTargetTimeLineGoal));
@@ -11306,6 +11329,21 @@ check_primary_slot_name(char **newval, void **extra, GucSource source)
 	if (*newval && strcmp(*newval, "") != 0 &&
 		!ReplicationSlotValidateName(*newval, WARNING))
 		return false;
+
+	return true;
+}
+
+static bool
+check_default_with_oids(bool *newval, void **extra, GucSource source)
+{
+	if (*newval)
+	{
+		/* check the GUC's definition for an explanation */
+		GUC_check_errcode(ERRCODE_FEATURE_NOT_SUPPORTED);
+		GUC_check_errmsg("tables declared WITH OIDS are not supported");
+
+		return false;
+	}
 
 	return true;
 }

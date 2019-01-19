@@ -7,7 +7,7 @@
 #    formatted header files and data files.  The BKI files are used to
 #    initialize the postgres template database.
 #
-# Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+# Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
 # Portions Copyright (c) 1994, Regents of the University of California
 #
 # src/backend/catalog/genbki.pl
@@ -57,10 +57,14 @@ die "No input files.\n" if !@input_files;
 die "--set-version must be specified.\n" if !defined $major_version;
 die "-I, the header include path, must be specified.\n" if !$include_path;
 
-# Make sure output_path ends in a slash.
+# Make sure paths end with a slash.
 if ($output_path ne '' && substr($output_path, -1) ne '/')
 {
 	$output_path .= '/';
+}
+if (substr($include_path, -1) ne '/')
+{
+	$include_path .= '/';
 }
 
 # Read all the files into internal data structures.
@@ -167,19 +171,28 @@ my $GenbkiNextOid = $FirstGenbkiObjectId;
 my $BOOTSTRAP_SUPERUSERID =
   Catalog::FindDefinedSymbolFromData($catalog_data{pg_authid},
 	'BOOTSTRAP_SUPERUSERID');
+my $C_COLLATION_OID =
+  Catalog::FindDefinedSymbolFromData($catalog_data{pg_collation},
+	'C_COLLATION_OID');
 my $PG_CATALOG_NAMESPACE =
   Catalog::FindDefinedSymbolFromData($catalog_data{pg_namespace},
 	'PG_CATALOG_NAMESPACE');
 
 
-# Build lookup tables for OID macro substitutions and for pg_attribute
-# copies of pg_type values.
+# Build lookup tables.
 
-# index access method OID lookup
+# access method OID lookup
 my %amoids;
 foreach my $row (@{ $catalog_data{pg_am} })
 {
 	$amoids{ $row->{amname} } = $row->{oid};
+}
+
+# language OID lookup
+my %langoids;
+foreach my $row (@{ $catalog_data{pg_language} })
+{
+	$langoids{ $row->{lanname} } = $row->{oid};
 }
 
 # opclass OID lookup
@@ -249,18 +262,53 @@ my %typeoids;
 my %types;
 foreach my $row (@{ $catalog_data{pg_type} })
 {
+	# for OID macro substitutions
 	$typeoids{ $row->{typname} } = $row->{oid};
+
+	# for pg_attribute copies of pg_type values
 	$types{ $row->{typname} }    = $row;
 }
 
-# Map catalog name to OID lookup.
+# Encoding identifier lookup.  This uses the same replacement machinery
+# as for OIDs, but we have to dig the values out of pg_wchar.h.
+my %encids;
+
+my $encfile = $include_path . 'mb/pg_wchar.h';
+open(my $ef, '<', $encfile) || die "$encfile: $!";
+
+# We're parsing an enum, so start with 0 and increment
+# every time we find an enum member.
+my $encid = 0;
+my $collect_encodings = 0;
+while (<$ef>)
+{
+	if (/typedef\s+enum\s+pg_enc/)
+	{
+		$collect_encodings = 1;
+		next;
+	}
+
+	last if /_PG_LAST_ENCODING_/;
+
+	if ($collect_encodings and /^\s+(PG_\w+)/)
+	{
+		$encids{$1} = $encid;
+		$encid++;
+	}
+}
+
+close $ef;
+
+# Map lookup name to the corresponding hash table.
 my %lookup_kind = (
 	pg_am       => \%amoids,
+	pg_language => \%langoids,
 	pg_opclass  => \%opcoids,
 	pg_operator => \%operoids,
 	pg_opfamily => \%opfoids,
 	pg_proc     => \%procoids,
-	pg_type     => \%typeoids);
+	pg_type     => \%typeoids,
+	encoding    => \%encids);
 
 
 # Open temp files
@@ -305,7 +353,7 @@ foreach my $catname (@catnames)
  * %s_d.h
  *    Macro definitions for %s
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * NOTES
@@ -548,7 +596,7 @@ print $schemapg <<EOM;
  * schemapg.h
  *    Schema_pg_xxx macros for use by relcache.c
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * NOTES
@@ -693,7 +741,10 @@ sub morph_row_for_pgattr
 
 	# set attndims if it's an array type
 	$row->{attndims} = $type->{typcategory} eq 'A' ? '1' : '0';
-	$row->{attcollation} = $type->{typcollation};
+
+	# collation-aware catalog columns must use C collation
+	$row->{attcollation} = $type->{typcollation} != 0 ?
+	    $C_COLLATION_OID : 0;
 
 	if (defined $attr->{forcenotnull})
 	{

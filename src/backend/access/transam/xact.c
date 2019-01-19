@@ -5,7 +5,7 @@
  *
  * See src/backend/access/transam/README for more information.
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -2277,6 +2277,18 @@ PrepareTransaction(void)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot PREPARE a transaction that has operated on temporary tables")));
+
+	/*
+	 * Similarly, PREPARE TRANSACTION is not allowed if the temporary
+	 * namespace has been involved in this transaction as we cannot allow it
+	 * to create, lock, or even drop objects within the temporary namespace
+	 * as this can mess up with this session or even a follow-up session
+	 * trying to use the same temporary namespace.
+	 */
+	if ((MyXactFlags & XACT_FLAGS_ACCESSEDTEMPNAMESPACE))
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot PREPARE a transaction that has operated on temporary namespace")));
 
 	/*
 	 * Likewise, don't allow PREPARE after pg_export_snapshot.  This could be

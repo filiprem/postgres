@@ -4,7 +4,7 @@
  *	  prototypes for various files in optimizer/plan
  *
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/optimizer/planmain.h
@@ -118,7 +118,7 @@ extern bool innerrel_is_unique(PlannerInfo *root,
  */
 extern Plan *set_plan_references(PlannerInfo *root, Plan *plan);
 extern void record_plan_function_dependency(PlannerInfo *root, Oid funcid);
-extern void record_plan_type_dependency(PlannerInfo *root, Oid typeid);
+extern void record_plan_type_dependency(PlannerInfo *root, Oid typid);
 extern void extract_query_dependencies(Node *query,
 						   List **relationOids,
 						   List **invalItems,

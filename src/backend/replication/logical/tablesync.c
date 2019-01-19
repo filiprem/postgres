@@ -2,7 +2,7 @@
  * tablesync.c
  *	  PostgreSQL logical replication
  *
- * Copyright (c) 2012-2018, PostgreSQL Global Development Group
+ * Copyright (c) 2012-2019, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/replication/logical/tablesync.c
@@ -88,6 +88,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 
+#include "access/heapam.h"
 #include "access/xact.h"
 
 #include "catalog/pg_subscription_rel.h"

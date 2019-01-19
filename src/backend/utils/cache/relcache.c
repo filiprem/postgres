@@ -3,7 +3,7 @@
  * relcache.c
  *	  POSTGRES relation descriptor cache code
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -31,6 +31,7 @@
 #include <unistd.h>
 
 #include "access/hash.h"
+#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/multixact.h"
 #include "access/nbtree.h"
@@ -70,11 +71,9 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
-#include "optimizer/cost.h"
 #include "optimizer/prep.h"
 #include "optimizer/var.h"
 #include "partitioning/partbounds.h"
-#include "pgstat.h"
 #include "rewrite/rewriteDefine.h"
 #include "rewrite/rowsecurity.h"
 #include "storage/lmgr.h"
@@ -1253,6 +1252,10 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 static void
 RelationInitPhysicalAddr(Relation relation)
 {
+	/* these relations kinds never have storage */
+	if (!RELKIND_HAS_STORAGE(relation->rd_rel->relkind))
+		return;
+
 	if (relation->rd_rel->reltablespace)
 		relation->rd_node.spcNode = relation->rd_rel->reltablespace;
 	else
@@ -2261,11 +2264,9 @@ RelationDestroyRelation(Relation relation, bool remember_tupdesc)
 	list_free_deep(relation->rd_fkeylist);
 	list_free(relation->rd_indexlist);
 	bms_free(relation->rd_indexattr);
-	bms_free(relation->rd_projindexattr);
 	bms_free(relation->rd_keyattr);
 	bms_free(relation->rd_pkattr);
 	bms_free(relation->rd_idattr);
-	bms_free(relation->rd_projidx);
 	if (relation->rd_pubactions)
 		pfree(relation->rd_pubactions);
 	if (relation->rd_options)
@@ -4124,10 +4125,6 @@ RelationGetFKeyList(Relation relation)
 	{
 		Form_pg_constraint constraint = (Form_pg_constraint) GETSTRUCT(htup);
 		ForeignKeyCacheInfo *info;
-		Datum		adatum;
-		bool		isnull;
-		ArrayType  *arr;
-		int			nelem;
 
 		/* consider only foreign keys */
 		if (constraint->contype != CONSTRAINT_FOREIGN)
@@ -4138,58 +4135,11 @@ RelationGetFKeyList(Relation relation)
 		info->conrelid = constraint->conrelid;
 		info->confrelid = constraint->confrelid;
 
-		/* Extract data from conkey field */
-		adatum = fastgetattr(htup, Anum_pg_constraint_conkey,
-							 conrel->rd_att, &isnull);
-		if (isnull)
-			elog(ERROR, "null conkey for rel %s",
-				 RelationGetRelationName(relation));
-
-		arr = DatumGetArrayTypeP(adatum);	/* ensure not toasted */
-		nelem = ARR_DIMS(arr)[0];
-		if (ARR_NDIM(arr) != 1 ||
-			nelem < 1 ||
-			nelem > INDEX_MAX_KEYS ||
-			ARR_HASNULL(arr) ||
-			ARR_ELEMTYPE(arr) != INT2OID)
-			elog(ERROR, "conkey is not a 1-D smallint array");
-
-		info->nkeys = nelem;
-		memcpy(info->conkey, ARR_DATA_PTR(arr), nelem * sizeof(AttrNumber));
-
-		/* Likewise for confkey */
-		adatum = fastgetattr(htup, Anum_pg_constraint_confkey,
-							 conrel->rd_att, &isnull);
-		if (isnull)
-			elog(ERROR, "null confkey for rel %s",
-				 RelationGetRelationName(relation));
-
-		arr = DatumGetArrayTypeP(adatum);	/* ensure not toasted */
-		nelem = ARR_DIMS(arr)[0];
-		if (ARR_NDIM(arr) != 1 ||
-			nelem != info->nkeys ||
-			ARR_HASNULL(arr) ||
-			ARR_ELEMTYPE(arr) != INT2OID)
-			elog(ERROR, "confkey is not a 1-D smallint array");
-
-		memcpy(info->confkey, ARR_DATA_PTR(arr), nelem * sizeof(AttrNumber));
-
-		/* Likewise for conpfeqop */
-		adatum = fastgetattr(htup, Anum_pg_constraint_conpfeqop,
-							 conrel->rd_att, &isnull);
-		if (isnull)
-			elog(ERROR, "null conpfeqop for rel %s",
-				 RelationGetRelationName(relation));
-
-		arr = DatumGetArrayTypeP(adatum);	/* ensure not toasted */
-		nelem = ARR_DIMS(arr)[0];
-		if (ARR_NDIM(arr) != 1 ||
-			nelem != info->nkeys ||
-			ARR_HASNULL(arr) ||
-			ARR_ELEMTYPE(arr) != OIDOID)
-			elog(ERROR, "conpfeqop is not a 1-D OID array");
-
-		memcpy(info->conpfeqop, ARR_DATA_PTR(arr), nelem * sizeof(Oid));
+		DeconstructFkConstraintRow(htup, &info->nkeys,
+								   info->conkey,
+								   info->confkey,
+								   info->conpfeqop,
+								   NULL, NULL);
 
 		/* Add FK's node to the result list */
 		result = lappend(result, info);
@@ -4221,7 +4171,7 @@ RelationGetFKeyList(Relation relation)
  * so that we must recompute the index list on next request.  This handles
  * creation or deletion of an index.
  *
- * Indexes that are marked not IndexIsLive are omitted from the returned list.
+ * Indexes that are marked not indislive are omitted from the returned list.
  * Such indexes are expected to be dropped momentarily, and should not be
  * touched at all by any caller of this function.
  *
@@ -4288,7 +4238,7 @@ RelationGetIndexList(Relation relation)
 		 * HOT-safety decisions.  It's unsafe to touch such an index at all
 		 * since its catalog entries could disappear at any instant.
 		 */
-		if (!IndexIsLive(index))
+		if (!index->indislive)
 			continue;
 
 		/* Add index's OID to result list in the proper order */
@@ -4299,7 +4249,7 @@ RelationGetIndexList(Relation relation)
 		 * interesting for either oid indexes or replication identity indexes,
 		 * so don't check them.
 		 */
-		if (!IndexIsValid(index) || !index->indisunique ||
+		if (!index->indisvalid || !index->indisunique ||
 			!index->indimmediate ||
 			!heap_attisnull(htup, Anum_pg_index_indpred, NULL))
 			continue;
@@ -4396,7 +4346,7 @@ RelationGetStatExtList(Relation relation)
 
 	while (HeapTupleIsValid(htup = systable_getnext(indscan)))
 	{
-		Oid oid = ((Form_pg_statistic_ext) GETSTRUCT(htup))->oid;
+		Oid			oid = ((Form_pg_statistic_ext) GETSTRUCT(htup))->oid;
 
 		result = insert_ordered_oid(result, oid);
 	}
@@ -4670,77 +4620,6 @@ RelationGetIndexPredicate(Relation relation)
 	return result;
 }
 
-#define HEURISTIC_MAX_HOT_RECHECK_EXPR_COST 1000
-
-/*
- * Check if functional index is projection: index expression returns some subset
- * of its argument values. During HOT update check we handle projection indexes
- * differently: instead of checking if any of attributes used in indexed
- * expression were updated, we calculate and compare values of index expression
- * for old and new tuple values.
- *
- * Decision made by this function is based on two sources:
- * 1. Calculated cost of index expression: if greater than some heuristic limit
-	  then extra comparison of index expression values is expected to be too
-	  expensive, so we don't attempt it by default.
- * 2. "recheck_on_update" index option explicitly set by user, which overrides 1)
- */
-static bool
-IsProjectionFunctionalIndex(Relation index, IndexInfo *ii)
-{
-	bool		is_projection = false;
-
-#ifdef NOT_USED
-	if (ii->ii_Expressions)
-	{
-		HeapTuple	tuple;
-		Datum		reloptions;
-		bool		isnull;
-		QualCost	index_expr_cost;
-
-		/* by default functional index is considered as non-injective */
-		is_projection = true;
-
-		cost_qual_eval(&index_expr_cost, ii->ii_Expressions, NULL);
-
-		/*
-		 * If index expression is too expensive, then disable projection
-		 * optimization, because extra evaluation of index expression is
-		 * expected to be more expensive than index update.  Currently the
-		 * projection optimization has to calculate index expression twice
-		 * when the value of index expression has not changed and three times
-		 * when values differ because the expression is recalculated when
-		 * inserting a new index entry for the changed value.
-		 */
-		if ((index_expr_cost.startup + index_expr_cost.per_tuple) >
-			HEURISTIC_MAX_HOT_RECHECK_EXPR_COST)
-			is_projection = false;
-
-		tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(RelationGetRelid(index)));
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for relation %u", RelationGetRelid(index));
-
-		reloptions = SysCacheGetAttr(RELOID, tuple,
-									 Anum_pg_class_reloptions, &isnull);
-		if (!isnull)
-		{
-			GenericIndexOpts *idxopts;
-
-			idxopts = (GenericIndexOpts *) index_generic_reloptions(reloptions, false);
-
-			if (idxopts != NULL)
-			{
-				is_projection = idxopts->recheck_on_update;
-				pfree(idxopts);
-			}
-		}
-		ReleaseSysCache(tuple);
-	}
-#endif
-
-	return is_projection;
-}
-
 /*
  * RelationGetIndexAttrBitmap -- get a bitmap of index attribute numbers
  *
@@ -4768,29 +4647,24 @@ IsProjectionFunctionalIndex(Relation index, IndexInfo *ii)
 Bitmapset *
 RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 {
-	Bitmapset  *indexattrs;		/* columns used in non-projection indexes */
-	Bitmapset  *projindexattrs; /* columns used in projection indexes */
+	Bitmapset  *indexattrs;		/* indexed columns */
 	Bitmapset  *uindexattrs;	/* columns in unique indexes */
 	Bitmapset  *pkindexattrs;	/* columns in the primary index */
 	Bitmapset  *idindexattrs;	/* columns in the replica identity */
-	Bitmapset  *projindexes;	/* projection indexes */
 	List	   *indexoidlist;
 	List	   *newindexoidlist;
 	Oid			relpkindex;
 	Oid			relreplindex;
 	ListCell   *l;
 	MemoryContext oldcxt;
-	int			indexno;
 
 	/* Quick exit if we already computed the result. */
 	if (relation->rd_indexattr != NULL)
 	{
 		switch (attrKind)
 		{
-			case INDEX_ATTR_BITMAP_HOT:
+			case INDEX_ATTR_BITMAP_ALL:
 				return bms_copy(relation->rd_indexattr);
-			case INDEX_ATTR_BITMAP_PROJ:
-				return bms_copy(relation->rd_projindexattr);
 			case INDEX_ATTR_BITMAP_KEY:
 				return bms_copy(relation->rd_keyattr);
 			case INDEX_ATTR_BITMAP_PRIMARY_KEY:
@@ -4837,12 +4711,9 @@ restart:
 	 * won't be returned at all by RelationGetIndexList.
 	 */
 	indexattrs = NULL;
-	projindexattrs = NULL;
 	uindexattrs = NULL;
 	pkindexattrs = NULL;
 	idindexattrs = NULL;
-	projindexes = NULL;
-	indexno = 0;
 	foreach(l, indexoidlist)
 	{
 		Oid			indexOid = lfirst_oid(l);
@@ -4901,22 +4772,13 @@ restart:
 			}
 		}
 
-		/* Collect attributes used in expressions, too */
-		if (IsProjectionFunctionalIndex(indexDesc, indexInfo))
-		{
-			projindexes = bms_add_member(projindexes, indexno);
-			pull_varattnos((Node *) indexInfo->ii_Expressions, 1, &projindexattrs);
-		}
-		else
-		{
-			/* Collect all attributes used in expressions, too */
-			pull_varattnos((Node *) indexInfo->ii_Expressions, 1, &indexattrs);
-		}
+		/* Collect all attributes used in expressions, too */
+		pull_varattnos((Node *) indexInfo->ii_Expressions, 1, &indexattrs);
+
 		/* Collect all attributes in the index predicate, too */
 		pull_varattnos((Node *) indexInfo->ii_Predicate, 1, &indexattrs);
 
 		index_close(indexDesc, AccessShareLock);
-		indexno += 1;
 	}
 
 	/*
@@ -4943,8 +4805,6 @@ restart:
 		bms_free(pkindexattrs);
 		bms_free(idindexattrs);
 		bms_free(indexattrs);
-		bms_free(projindexattrs);
-		bms_free(projindexes);
 
 		goto restart;
 	}
@@ -4952,16 +4812,12 @@ restart:
 	/* Don't leak the old values of these bitmaps, if any */
 	bms_free(relation->rd_indexattr);
 	relation->rd_indexattr = NULL;
-	bms_free(relation->rd_projindexattr);
-	relation->rd_projindexattr = NULL;
 	bms_free(relation->rd_keyattr);
 	relation->rd_keyattr = NULL;
 	bms_free(relation->rd_pkattr);
 	relation->rd_pkattr = NULL;
 	bms_free(relation->rd_idattr);
 	relation->rd_idattr = NULL;
-	bms_free(relation->rd_projidx);
-	relation->rd_projidx = NULL;
 
 	/*
 	 * Now save copies of the bitmaps in the relcache entry.  We intentionally
@@ -4975,17 +4831,13 @@ restart:
 	relation->rd_pkattr = bms_copy(pkindexattrs);
 	relation->rd_idattr = bms_copy(idindexattrs);
 	relation->rd_indexattr = bms_copy(indexattrs);
-	relation->rd_projindexattr = bms_copy(projindexattrs);
-	relation->rd_projidx = bms_copy(projindexes);
 	MemoryContextSwitchTo(oldcxt);
 
 	/* We return our original working copy for caller to play with */
 	switch (attrKind)
 	{
-		case INDEX_ATTR_BITMAP_HOT:
+		case INDEX_ATTR_BITMAP_ALL:
 			return indexattrs;
-		case INDEX_ATTR_BITMAP_PROJ:
-			return projindexattrs;
 		case INDEX_ATTR_BITMAP_KEY:
 			return uindexattrs;
 		case INDEX_ATTR_BITMAP_PRIMARY_KEY:
@@ -5614,11 +5466,9 @@ load_relcache_init_file(bool shared)
 		rel->rd_pkindex = InvalidOid;
 		rel->rd_replidindex = InvalidOid;
 		rel->rd_indexattr = NULL;
-		rel->rd_projindexattr = NULL;
 		rel->rd_keyattr = NULL;
 		rel->rd_pkattr = NULL;
 		rel->rd_idattr = NULL;
-		rel->rd_projidx = NULL;
 		rel->rd_pubactions = NULL;
 		rel->rd_statvalid = false;
 		rel->rd_statlist = NIL;

@@ -3,7 +3,7 @@
  * port.h
  *	  Header for src/port/ compatibility functions.
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/port.h
@@ -498,9 +498,12 @@ extern char *inet_net_ntop(int af, const void *src, int bits,
 			  char *dst, size_t size);
 
 /* port/pg_strong_random.c */
-#ifdef HAVE_STRONG_RANDOM
 extern bool pg_strong_random(void *buf, size_t len);
-#endif
+/*
+ * pg_backend_random used to be a wrapper for pg_strong_random before
+ * Postgres 12 for the backend code.
+ */
+#define pg_backend_random pg_strong_random
 
 /* port/pgcheckdir.c */
 extern int	pg_check_dir(const char *dir);

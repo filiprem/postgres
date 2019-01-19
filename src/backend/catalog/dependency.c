@@ -4,7 +4,7 @@
  *	  Routines to support inter-object dependencies.
  *
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -14,7 +14,9 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/htup_details.h"
+#include "access/heapam.h"
 #include "access/xact.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
@@ -100,6 +102,7 @@ typedef struct
 #define DEPFLAG_INTERNAL	0x0008	/* reached via internal dependency */
 #define DEPFLAG_EXTENSION	0x0010	/* reached via extension dependency */
 #define DEPFLAG_REVERSE		0x0020	/* reverse internal/extension link */
+#define DEPFLAG_SUBOBJECT	0x0040	/* subobject of another deletable object */
 
 
 /* expansible list of ObjectAddresses */
@@ -882,6 +885,10 @@ reportDependentObjects(const ObjectAddresses *targetObjects,
 
 		/* Ignore the original deletion target(s) */
 		if (extra->flags & DEPFLAG_ORIGINAL)
+			continue;
+
+		/* Also ignore sub-objects; we'll report the whole object elsewhere */
+		if (extra->flags & DEPFLAG_SUBOBJECT)
 			continue;
 
 		objDesc = getObjectDescription(obj);
@@ -2318,13 +2325,19 @@ object_address_present_add_flags(const ObjectAddress *object,
 				 * DROP COLUMN action even though we know we're gonna delete
 				 * the table later.
 				 *
+				 * What we can do, though, is mark this as a subobject so that
+				 * we don't report it separately, which is confusing because
+				 * it's unpredictable whether it happens or not.  But do so
+				 * only if flags != 0 (flags == 0 is a read-only probe).
+				 *
 				 * Because there could be other subobjects of this object in
 				 * the array, this case means we always have to loop through
 				 * the whole array; we cannot exit early on a match.
 				 */
 				ObjectAddressExtra *thisextra = addrs->extras + i;
 
-				thisextra->flags |= flags;
+				if (flags)
+					thisextra->flags |= (flags | DEPFLAG_SUBOBJECT);
 			}
 		}
 	}
@@ -2372,7 +2385,8 @@ stack_address_present_add_flags(const ObjectAddress *object,
 				 * object_address_present_add_flags(), we should propagate
 				 * flags for the whole object to each of its subobjects.
 				 */
-				stackptr->flags |= flags;
+				if (flags)
+					stackptr->flags |= (flags | DEPFLAG_SUBOBJECT);
 			}
 		}
 	}

@@ -2,7 +2,7 @@
  * worker.c
  *	   PostgreSQL logical replication worker (apply)
  *
- * Copyright (c) 2016-2018, PostgreSQL Global Development Group
+ * Copyright (c) 2016-2019, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/replication/logical/worker.c
@@ -27,6 +27,7 @@
 #include "pgstat.h"
 #include "funcapi.h"
 
+#include "access/heapam.h"
 #include "access/xact.h"
 #include "access/xlog_internal.h"
 

@@ -3,7 +3,7 @@
  * analyze.c
  *	  the Postgres statistics generator
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -16,6 +16,8 @@
 
 #include <math.h>
 
+#include "access/genam.h"
+#include "access/heapam.h"
 #include "access/multixact.h"
 #include "access/sysattr.h"
 #include "access/transam.h"
@@ -1124,20 +1126,35 @@ acquire_sample_rows(Relation onerel, int elevel,
 				case HEAPTUPLE_DELETE_IN_PROGRESS:
 
 					/*
-					 * We count delete-in-progress rows as still live, using
-					 * the same reasoning given above; but we don't bother to
-					 * include them in the sample.
+					 * We count and sample delete-in-progress rows the same as
+					 * live ones, so that the stats counters come out right if
+					 * the deleting transaction commits after us, per the same
+					 * reasoning given above.
 					 *
 					 * If the delete was done by our own transaction, however,
 					 * we must count the row as dead to make
 					 * pgstat_report_analyze's stats adjustments come out
 					 * right.  (Note: this works out properly when the row was
 					 * both inserted and deleted in our xact.)
+					 *
+					 * The net effect of these choices is that we act as
+					 * though an IN_PROGRESS transaction hasn't happened yet,
+					 * except if it is our own transaction, which we assume
+					 * has happened.
+					 *
+					 * This approach ensures that we behave sanely if we see
+					 * both the pre-image and post-image rows for a row being
+					 * updated by a concurrent transaction: we will sample the
+					 * pre-image but not the post-image.  We also get sane
+					 * results if the concurrent transaction never commits.
 					 */
 					if (TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetUpdateXid(targtuple.t_data)))
 						deadrows += 1;
 					else
+					{
+						sample_it = true;
 						liverows += 1;
+					}
 					break;
 
 				default:

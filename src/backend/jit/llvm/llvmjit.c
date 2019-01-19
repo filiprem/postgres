@@ -3,7 +3,7 @@
  * llvmjit.c
  *	  Core part of the LLVM JIT provider.
  *
- * Copyright (c) 2016-2018, PostgreSQL Global Development Group
+ * Copyright (c) 2016-2019, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/jit/llvm/llvmjit.c
@@ -63,7 +63,7 @@ LLVMTypeRef StructItemPointerData;
 LLVMTypeRef StructBlockId;
 LLVMTypeRef StructFormPgAttribute;
 LLVMTypeRef StructTupleConstr;
-LLVMTypeRef StructtupleDesc;
+LLVMTypeRef StructTupleDescData;
 LLVMTypeRef StructTupleTableSlot;
 LLVMTypeRef StructHeapTupleTableSlot;
 LLVMTypeRef StructMinimalTupleTableSlot;
@@ -816,7 +816,7 @@ llvm_create_types(void)
 	StructHeapTupleTableSlot = load_type(mod, "StructHeapTupleTableSlot");
 	StructMinimalTupleTableSlot = load_type(mod, "StructMinimalTupleTableSlot");
 	StructHeapTupleData = load_type(mod, "StructHeapTupleData");
-	StructtupleDesc = load_type(mod, "StructtupleDesc");
+	StructTupleDescData = load_type(mod, "StructTupleDescData");
 	StructAggState = load_type(mod, "StructAggState");
 	StructAggStatePerGroupData = load_type(mod, "StructAggStatePerGroupData");
 	StructAggStatePerTransData = load_type(mod, "StructAggStatePerTransData");

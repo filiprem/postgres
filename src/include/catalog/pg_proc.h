@@ -3,7 +3,7 @@
  * pg_proc.h
  *	  definition of the "procedure" system catalog (pg_proc)
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/catalog/pg_proc.h
@@ -42,7 +42,7 @@ CATALOG(pg_proc,1255,ProcedureRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(81,Proce
 	Oid			proowner BKI_DEFAULT(PGUID);
 
 	/* OID of pg_language entry */
-	Oid			prolang BKI_DEFAULT(12);
+	Oid			prolang BKI_DEFAULT(internal) BKI_LOOKUP(pg_language);
 
 	/* estimated execution cost */
 	float4		procost BKI_DEFAULT(1);

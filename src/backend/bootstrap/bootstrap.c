@@ -4,7 +4,7 @@
  *	  routines to support running postgres in 'bootstrap' mode
  *	bootstrap mode is used to create the initial template database
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -17,6 +17,8 @@
 #include <unistd.h>
 #include <signal.h>
 
+#include "access/genam.h"
+#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/xact.h"
 #include "access/xlog_internal.h"
@@ -111,7 +113,7 @@ static const struct typinfo TypInfo[] = {
 	F_INT4IN, F_INT4OUT},
 	{"float4", FLOAT4OID, 0, 4, FLOAT4PASSBYVAL, 'i', 'p', InvalidOid,
 	F_FLOAT4IN, F_FLOAT4OUT},
-	{"name", NAMEOID, CHAROID, NAMEDATALEN, false, 'c', 'p', InvalidOid,
+	{"name", NAMEOID, CHAROID, NAMEDATALEN, false, 'c', 'p', C_COLLATION_OID,
 	F_NAMEIN, F_NAMEOUT},
 	{"regclass", REGCLASSOID, 0, 4, true, 'i', 'p', InvalidOid,
 	F_REGCLASSIN, F_REGCLASSOUT},
@@ -743,6 +745,15 @@ DefineAttr(char *name, char *type, int attnum, int nullness)
 		else
 			attrtypes[attnum]->attndims = 0;
 	}
+
+	/*
+	 * If a system catalog column is collation-aware, force it to use C
+	 * collation, so that its behavior is independent of the database's
+	 * collation.  This is essential to allow template0 to be cloned with a
+	 * different database collation.
+	 */
+	if (OidIsValid(attrtypes[attnum]->attcollation))
+		attrtypes[attnum]->attcollation = C_COLLATION_OID;
 
 	attrtypes[attnum]->attstattarget = -1;
 	attrtypes[attnum]->attcacheoff = -1;

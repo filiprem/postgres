@@ -3,7 +3,7 @@
  * misc.c
  *
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -19,6 +19,7 @@
 #include <math.h>
 #include <unistd.h>
 
+#include "access/heapam.h"
 #include "access/sysattr.h"
 #include "catalog/catalog.h"
 #include "catalog/pg_tablespace.h"
@@ -417,15 +418,17 @@ pg_get_keywords(PG_FUNCTION_ARGS)
 
 	funcctx = SRF_PERCALL_SETUP();
 
-	if (funcctx->call_cntr < NumScanKeywords)
+	if (funcctx->call_cntr < ScanKeywords.num_keywords)
 	{
 		char	   *values[3];
 		HeapTuple	tuple;
 
 		/* cast-away-const is ugly but alternatives aren't much better */
-		values[0] = unconstify(char *, ScanKeywords[funcctx->call_cntr].name);
+		values[0] = unconstify(char *,
+							   GetScanKeyword(funcctx->call_cntr,
+											  &ScanKeywords));
 
-		switch (ScanKeywords[funcctx->call_cntr].category)
+		switch (ScanKeywordCategories[funcctx->call_cntr])
 		{
 			case UNRESERVED_KEYWORD:
 				values[1] = "U";

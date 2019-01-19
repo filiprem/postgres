@@ -26,7 +26,7 @@
  *	before ExecutorEnd.  This can be omitted only in case of EXPLAIN,
  *	which should also omit ExecutorRun.
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -37,6 +37,7 @@
  */
 #include "postgres.h"
 
+#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "access/transam.h"
@@ -1837,25 +1838,26 @@ ExecPartitionCheckEmitError(ResultRelInfo *resultRelInfo,
 							TupleTableSlot *slot,
 							EState *estate)
 {
-	Relation	rel = resultRelInfo->ri_RelationDesc;
-	Relation	orig_rel = rel;
-	TupleDesc	tupdesc = RelationGetDescr(rel);
+	Oid			root_relid;
+	TupleDesc	tupdesc;
 	char	   *val_desc;
 	Bitmapset  *modifiedCols;
-	Bitmapset  *insertedCols;
-	Bitmapset  *updatedCols;
 
 	/*
-	 * Need to first convert the tuple to the root partitioned table's row
-	 * type. For details, check similar comments in ExecConstraints().
+	 * If the tuple has been routed, it's been converted to the partition's
+	 * rowtype, which might differ from the root table's.  We must convert it
+	 * back to the root table's rowtype so that val_desc in the error message
+	 * matches the input tuple.
 	 */
 	if (resultRelInfo->ri_PartitionRoot)
 	{
-		TupleDesc	old_tupdesc = RelationGetDescr(rel);
+		TupleDesc	old_tupdesc;
 		AttrNumber *map;
 
-		rel = resultRelInfo->ri_PartitionRoot;
-		tupdesc = RelationGetDescr(rel);
+		root_relid = RelationGetRelid(resultRelInfo->ri_PartitionRoot);
+		tupdesc = RelationGetDescr(resultRelInfo->ri_PartitionRoot);
+
+		old_tupdesc = RelationGetDescr(resultRelInfo->ri_RelationDesc);
 		/* a reverse map */
 		map = convert_tuples_by_name_map_if_req(old_tupdesc, tupdesc,
 												gettext_noop("could not convert row type"));
@@ -1868,11 +1870,16 @@ ExecPartitionCheckEmitError(ResultRelInfo *resultRelInfo,
 			slot = execute_attr_map_slot(map, slot,
 										 MakeTupleTableSlot(tupdesc, &TTSOpsVirtual));
 	}
+	else
+	{
+		root_relid = RelationGetRelid(resultRelInfo->ri_RelationDesc);
+		tupdesc = RelationGetDescr(resultRelInfo->ri_RelationDesc);
+	}
 
-	insertedCols = GetInsertedColumns(resultRelInfo, estate);
-	updatedCols = GetUpdatedColumns(resultRelInfo, estate);
-	modifiedCols = bms_union(insertedCols, updatedCols);
-	val_desc = ExecBuildSlotValueDescription(RelationGetRelid(rel),
+	modifiedCols = bms_union(GetInsertedColumns(resultRelInfo, estate),
+							 GetUpdatedColumns(resultRelInfo, estate));
+
+	val_desc = ExecBuildSlotValueDescription(root_relid,
 											 slot,
 											 tupdesc,
 											 modifiedCols,
@@ -1880,7 +1887,7 @@ ExecPartitionCheckEmitError(ResultRelInfo *resultRelInfo,
 	ereport(ERROR,
 			(errcode(ERRCODE_CHECK_VIOLATION),
 			 errmsg("new row for relation \"%s\" violates partition constraint",
-					RelationGetRelationName(orig_rel)),
+					RelationGetRelationName(resultRelInfo->ri_RelationDesc)),
 			 val_desc ? errdetail("Failing row contains %s.", val_desc) : 0));
 }
 
@@ -2429,13 +2436,10 @@ ExecBuildAuxRowMark(ExecRowMark *erm, List *targetlist)
  *
  * Returns a slot containing the new candidate update/delete tuple, or
  * NULL if we determine we shouldn't process the row.
- *
- * Note: properly, lockmode should be declared as enum LockTupleMode,
- * but we use "int" to avoid having to include heapam.h in executor.h.
  */
 TupleTableSlot *
 EvalPlanQual(EState *estate, EPQState *epqstate,
-			 Relation relation, Index rti, int lockmode,
+			 Relation relation, Index rti, LockTupleMode lockmode,
 			 ItemPointer tid, TransactionId priorXmax)
 {
 	TupleTableSlot *slot;
@@ -2516,12 +2520,9 @@ EvalPlanQual(EState *estate, EPQState *epqstate,
  *
  * If successful, we have locked the newest tuple version, so caller does not
  * need to worry about it changing anymore.
- *
- * Note: properly, lockmode should be declared as enum LockTupleMode,
- * but we use "int" to avoid having to include heapam.h in executor.h.
  */
 HeapTuple
-EvalPlanQualFetch(EState *estate, Relation relation, int lockmode,
+EvalPlanQualFetch(EState *estate, Relation relation, LockTupleMode lockmode,
 				  LockWaitPolicy wait_policy,
 				  ItemPointer tid, TransactionId priorXmax)
 {

@@ -10,7 +10,7 @@
  *	  Index cost functions are located via the index AM's API struct,
  *	  which is obtained from the handler function registered in pg_am.
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -103,6 +103,7 @@
 
 #include "access/brin.h"
 #include "access/gin.h"
+#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "catalog/index.h"
@@ -1292,13 +1293,11 @@ patternsel(PG_FUNCTION_ARGS, Pattern_Type ptype, bool negate)
 	switch (vartype)
 	{
 		case TEXTOID:
+		case NAMEOID:
 			opfamily = TEXT_BTREE_FAM_OID;
 			break;
 		case BPCHAROID:
 			opfamily = BPCHAR_BTREE_FAM_OID;
-			break;
-		case NAMEOID:
-			opfamily = NAME_BTREE_FAM_OID;
 			break;
 		case BYTEAOID:
 			opfamily = BYTEA_BTREE_FAM_OID;
@@ -6341,23 +6340,16 @@ make_greater_string(const Const *str_const, FmgrInfo *ltproc, Oid collation)
 	char	   *workstr;
 	int			len;
 	Datum		cmpstr;
-	text	   *cmptxt = NULL;
+	char	   *cmptxt = NULL;
 	mbcharacter_incrementer charinc;
 
 	/*
 	 * Get a modifiable copy of the prefix string in C-string format, and set
 	 * up the string we will compare to as a Datum.  In C locale this can just
-	 * be the given prefix string, otherwise we need to add a suffix.  Types
-	 * NAME and BYTEA sort bytewise so they don't need a suffix either.
+	 * be the given prefix string, otherwise we need to add a suffix.  Type
+	 * BYTEA sorts bytewise so it never needs a suffix either.
 	 */
-	if (datatype == NAMEOID)
-	{
-		workstr = DatumGetCString(DirectFunctionCall1(nameout,
-													  str_const->constvalue));
-		len = strlen(workstr);
-		cmpstr = str_const->constvalue;
-	}
-	else if (datatype == BYTEAOID)
+	if (datatype == BYTEAOID)
 	{
 		bytea	   *bstr = DatumGetByteaPP(str_const->constvalue);
 
@@ -6369,7 +6361,11 @@ make_greater_string(const Const *str_const, FmgrInfo *ltproc, Oid collation)
 	}
 	else
 	{
-		workstr = TextDatumGetCString(str_const->constvalue);
+		if (datatype == NAMEOID)
+			workstr = DatumGetCString(DirectFunctionCall1(nameout,
+														  str_const->constvalue));
+		else
+			workstr = TextDatumGetCString(str_const->constvalue);
 		len = strlen(workstr);
 		if (lc_collate_is_c(collation) || len == 0)
 			cmpstr = str_const->constvalue;
@@ -6395,11 +6391,22 @@ make_greater_string(const Const *str_const, FmgrInfo *ltproc, Oid collation)
 			}
 
 			/* And build the string to compare to */
-			cmptxt = (text *) palloc(VARHDRSZ + len + 1);
-			SET_VARSIZE(cmptxt, VARHDRSZ + len + 1);
-			memcpy(VARDATA(cmptxt), workstr, len);
-			*(VARDATA(cmptxt) + len) = suffixchar;
-			cmpstr = PointerGetDatum(cmptxt);
+			if (datatype == NAMEOID)
+			{
+				cmptxt = palloc(len + 2);
+				memcpy(cmptxt, workstr, len);
+				cmptxt[len] = suffixchar;
+				cmptxt[len + 1] = '\0';
+				cmpstr = PointerGetDatum(cmptxt);
+			}
+			else
+			{
+				cmptxt = palloc(VARHDRSZ + len + 1);
+				SET_VARSIZE(cmptxt, VARHDRSZ + len + 1);
+				memcpy(VARDATA(cmptxt), workstr, len);
+				*(VARDATA(cmptxt) + len) = suffixchar;
+				cmpstr = PointerGetDatum(cmptxt);
+			}
 		}
 	}
 
@@ -6518,7 +6525,7 @@ string_to_const(const char *str, Oid datatype)
 			break;
 
 		case NAMEOID:
-			collation = InvalidOid;
+			collation = C_COLLATION_OID;
 			constlen = NAMEDATALEN;
 			break;
 

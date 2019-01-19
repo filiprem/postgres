@@ -4,7 +4,7 @@
  *	  definition of the "type" system catalog (pg_type)
  *
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/catalog/pg_type.h
@@ -211,8 +211,9 @@ CATALOG(pg_type,1247,TypeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(71,TypeRelati
 	int32		typndims BKI_DEFAULT(0);
 
 	/*
-	 * Collation: 0 if type cannot use collations, DEFAULT_COLLATION_OID for
-	 * collatable base types, possibly other OID for domains
+	 * Collation: 0 if type cannot use collations, nonzero (typically
+	 * DEFAULT_COLLATION_OID) for collatable base types, possibly some other
+	 * OID for domains over collatable types
 	 */
 	Oid			typcollation BKI_DEFAULT(0);
 

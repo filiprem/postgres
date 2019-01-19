@@ -23,12 +23,12 @@
  * the TID array, just enough to hold as many heap tuples as fit on one page.
  *
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  src/backend/commands/vacuumlazy.c
+ *	  src/backend/access/heap/vacuumlazy.c
  *
  *-------------------------------------------------------------------------
  */
@@ -178,7 +178,7 @@ static bool heap_page_is_all_visible(Relation rel, Buffer buf,
 
 
 /*
- *	lazy_vacuum_rel() -- perform LAZY VACUUM for one heap relation
+ *	heap_vacuum_rel() -- perform VACUUM for one heap relation
  *
  *		This routine vacuums a single heap, cleans out its indexes, and
  *		updates its relpages and reltuples statistics.
@@ -187,7 +187,7 @@ static bool heap_page_is_all_visible(Relation rel, Buffer buf,
  *		and locked the relation.
  */
 void
-lazy_vacuum_rel(Relation onerel, int options, VacuumParams *params,
+heap_vacuum_rel(Relation onerel, int options, VacuumParams *params,
 				BufferAccessStrategy bstrategy)
 {
 	LVRelStats *vacrelstats;

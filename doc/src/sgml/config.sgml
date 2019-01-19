@@ -3350,11 +3350,17 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
       </term>
       <listitem>
        <para>
-        Specifies recovering into a particular timeline.  The default is
-        to recover along the same timeline that was current when the
-        base backup was taken. Setting this to <literal>latest</literal> recovers
+        Specifies recovering into a particular timeline.  The value can be a
+        numeric timeline ID or a special value.  The value
+        <literal>current</literal> recovers along the same timeline that was
+        current when the base backup was taken.  The
+        value <literal>latest</literal> recovers
         to the latest timeline found in the archive, which is useful in
-        a standby server. Other than that you only need to set this parameter
+        a standby server.  <literal>latest</literal> is the default.
+       </para>
+
+       <para>
+        You usually only need to set this parameter
         in complex re-recovery situations, where you need to return to
         a state that itself was reached after a point-in-time recovery.
         See <xref linkend="backup-timelines"/> for discussion.
@@ -5667,7 +5673,8 @@ local0.*    /var/log/postgresql
       </term>
       <listitem>
        <para>
-        Controls which message levels are written to the server log.
+        Controls which <link linkend="runtime-config-severity-levels">message
+        levels</link> are written to the server log.
         Valid values are <literal>DEBUG5</literal>, <literal>DEBUG4</literal>,
         <literal>DEBUG3</literal>, <literal>DEBUG2</literal>, <literal>DEBUG1</literal>,
         <literal>INFO</literal>, <literal>NOTICE</literal>, <literal>WARNING</literal>,
@@ -5693,7 +5700,9 @@ local0.*    /var/log/postgresql
         Controls which SQL statements that cause an error
         condition are recorded in the server log.  The current
         SQL statement is included in the log entry for any message of
-        the specified severity or higher.
+        the specified
+        <link linkend="runtime-config-severity-levels">severity</link>
+        or higher.
         Valid values are <literal>DEBUG5</literal>,
         <literal>DEBUG4</literal>, <literal>DEBUG3</literal>,
         <literal>DEBUG2</literal>, <literal>DEBUG1</literal>,
@@ -7025,7 +7034,9 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </term>
       <listitem>
        <para>
-        Controls which message levels are sent to the client.
+        Controls which
+        <link linkend="runtime-config-severity-levels">message levels</link>
+        are sent to the client.
         Valid values are <literal>DEBUG5</literal>,
         <literal>DEBUG4</literal>, <literal>DEBUG3</literal>, <literal>DEBUG2</literal>,
         <literal>DEBUG1</literal>, <literal>LOG</literal>, <literal>NOTICE</literal>,
@@ -7034,6 +7045,9 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         the fewer messages are sent.  The default is
         <literal>NOTICE</literal>.  Note that <literal>LOG</literal> has a different
         rank here than in <xref linkend="guc-log-min-messages"/>.
+       </para>
+       <para>
+        <literal>INFO</literal> level messages are always sent to the client.
        </para>
       </listitem>
      </varlistentry>
@@ -7066,7 +7080,7 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
        <para>
         If one of the list items is the special name
         <literal>$user</literal>, then the schema having the name returned by
-        <function>SESSION_USER</function> is substituted, if there is such a schema
+        <function>CURRENT_USER</function> is substituted, if there is such a schema
         and the user has <literal>USAGE</literal> permission for it.
         (If not, <literal>$user</literal> is ignored.)
        </para>
