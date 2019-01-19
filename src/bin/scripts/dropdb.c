@@ -15,6 +15,10 @@
 #include "fe_utils/string_utils.h"
 
 
+/* Time to sleep after isuing SIGTERM to backends */
+#define TERMINATE_SLEEP_TIME 1
+
+
 static void help(const char *progname);
 
 
@@ -33,6 +37,7 @@ main(int argc, char *argv[])
 		{"interactive", no_argument, NULL, 'i'},
 		{"if-exists", no_argument, &if_exists, 1},
 		{"maintenance-db", required_argument, NULL, 2},
+		{"force", no_argument, NULL, 'f'},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -48,6 +53,7 @@ main(int argc, char *argv[])
 	enum trivalue prompt_password = TRI_DEFAULT;
 	bool		echo = false;
 	bool		interactive = false;
+	bool		force = false;
 
 	PQExpBufferData sql;
 
@@ -59,7 +65,7 @@ main(int argc, char *argv[])
 
 	handle_help_version_opts(argc, argv, "dropdb", help);
 
-	while ((c = getopt_long(argc, argv, "h:p:U:wWei", long_options, &optindex)) != -1)
+	while ((c = getopt_long(argc, argv, "h:p:U:wWeif", long_options, &optindex)) != -1)
 	{
 		switch (c)
 		{
@@ -83,6 +89,9 @@ main(int argc, char *argv[])
 				break;
 			case 'i':
 				interactive = true;
+				break;
+			case 'f':
+				force = true;
 				break;
 			case 0:
 				/* this covers the long options */
@@ -121,9 +130,6 @@ main(int argc, char *argv[])
 
 	initPQExpBuffer(&sql);
 
-	appendPQExpBuffer(&sql, "DROP DATABASE %s%s;",
-					  (if_exists ? "IF EXISTS " : ""), fmtId(dbname));
-
 	/* Avoid trying to drop postgres db while we are connected to it. */
 	if (maintenance_db == NULL && strcmp(dbname, "postgres") == 0)
 		maintenance_db = "template1";
@@ -131,6 +137,64 @@ main(int argc, char *argv[])
 	conn = connectMaintenanceDatabase(maintenance_db,
 									  host, port, username, prompt_password,
 									  progname, echo);
+
+	if (force)
+	{
+		/* TODO: revert this UPDATE in case removal fails for any reason */
+		appendPQExpBufferStr(&sql,
+							 "UPDATE pg_catalog.pg_database\n"
+							 " SET datallowconn = 'false'\n"
+							 " WHERE datname OPERATOR(pg_catalog.=) ");
+		appendStringLiteralConn(&sql, dbname, conn);
+		appendPQExpBufferStr(&sql, ";\n");
+		if (echo)
+			printf("%s\n", sql.data);
+		result = PQexec(conn, sql.data);
+		if (PQresultStatus(result) != PGRES_COMMAND_OK)
+		{
+			fprintf(stderr, _("%s: database removal failed: %s"),
+					progname, PQerrorMessage(conn));
+			PQfinish(conn);
+			exit(1);
+		}
+
+		PQclear(result);
+
+		resetPQExpBuffer(&sql);
+
+		appendPQExpBufferStr(&sql,
+							"SELECT pg_catalog.pg_terminate_backend(pid)\n"
+							" FROM pg_catalog.pg_stat_activity\n"
+							" WHERE pid OPERATOR(pg_catalog.<>) pg_catalog.pg_backend_pid()\n"
+							" AND datname OPERATOR(pg_catalog.=) ");
+		appendStringLiteralConn(&sql, dbname, conn);
+		appendPQExpBufferStr(&sql, ";\n");
+
+		if (echo)
+			printf("%s\n", sql.data);
+		result = PQexec(conn, sql.data);
+		if (PQresultStatus(result) == PGRES_TUPLES_OK)
+		{
+			if (PQntuples(result) > 0)
+				printf("%s: sent SIGTERM to %d backend(s)\n",
+					   progname, PQntuples(result));
+				pg_usleep(TERMINATE_SLEEP_TIME * 1000000);
+		}
+		else
+		{
+			fprintf(stderr, _("%s: database removal failed: %s"),
+					progname, PQerrorMessage(conn));
+			PQfinish(conn);
+			exit(1);
+		}
+
+		PQclear(result);
+
+		resetPQExpBuffer(&sql);
+	}
+
+	appendPQExpBuffer(&sql, "DROP DATABASE %s%s;",
+					  (if_exists ? "IF EXISTS " : ""), fmtId(dbname));
 
 	if (echo)
 		printf("%s\n", sql.data);
@@ -158,6 +222,7 @@ help(const char *progname)
 	printf(_("\nOptions:\n"));
 	printf(_("  -e, --echo                show the commands being sent to the server\n"));
 	printf(_("  -i, --interactive         prompt before deleting anything\n"));
+	printf(_("  -f, --force               force termination of connected backends\n"));
 	printf(_("  -V, --version             output version information, then exit\n"));
 	printf(_("  --if-exists               don't report error if database doesn't exist\n"));
 	printf(_("  -?, --help                show this help, then exit\n"));

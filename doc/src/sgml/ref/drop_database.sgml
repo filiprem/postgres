@@ -79,7 +79,8 @@ DROP DATABASE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
    This command cannot be executed while connected to the target
    database. Thus, it might be more convenient to use the program
    <xref linkend="app-dropdb"/> instead,
-   which is a wrapper around this command.
+   which is a wrapper around this command, and is also able
+   to terminate existing connections.
   </para>
  </refsect1>
 
