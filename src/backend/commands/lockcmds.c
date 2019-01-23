@@ -14,6 +14,7 @@
  */
 #include "postgres.h"
 
+#include "access/table.h"
 #include "access/xact.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_inherits.h"
@@ -25,7 +26,6 @@
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 #include "rewrite/rewriteHandler.h"
-#include "access/heapam.h"
 #include "nodes/nodeFuncs.h"
 
 static void LockTableRecurse(Oid reloid, LOCKMODE lockmode, bool nowait, Oid userid);
@@ -273,7 +273,7 @@ LockViewRecurse(Oid reloid, LOCKMODE lockmode, bool nowait, List *ancestor_views
 	Relation	view;
 	Query	   *viewquery;
 
-	view = heap_open(reloid, NoLock);
+	view = table_open(reloid, NoLock);
 	viewquery = get_view_query(view);
 
 	context.lockmode = lockmode;
@@ -286,7 +286,7 @@ LockViewRecurse(Oid reloid, LOCKMODE lockmode, bool nowait, List *ancestor_views
 
 	ancestor_views = list_delete_oid(ancestor_views, reloid);
 
-	heap_close(view, NoLock);
+	table_close(view, NoLock);
 }
 
 /*

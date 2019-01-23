@@ -136,7 +136,6 @@
 #include "utils/memutils.h"
 #include "utils/snapshot.h"
 #include "utils/snapmgr.h"
-#include "utils/tqual.h"
 
 #include "storage/block.h"		/* debugging output */
 #include "storage/fd.h"
@@ -376,7 +375,7 @@ static void
 SnapBuildFreeSnapshot(Snapshot snap)
 {
 	/* make sure we don't get passed an external snapshot */
-	Assert(snap->satisfies == HeapTupleSatisfiesHistoricMVCC);
+	Assert(snap->snapshot_type == SNAPSHOT_HISTORIC_MVCC);
 
 	/* make sure nobody modified our snapshot */
 	Assert(snap->curcid == FirstCommandId);
@@ -434,7 +433,7 @@ void
 SnapBuildSnapDecRefcount(Snapshot snap)
 {
 	/* make sure we don't get passed an external snapshot */
-	Assert(snap->satisfies == HeapTupleSatisfiesHistoricMVCC);
+	Assert(snap->snapshot_type == SNAPSHOT_HISTORIC_MVCC);
 
 	/* make sure nobody modified our snapshot */
 	Assert(snap->curcid == FirstCommandId);
@@ -476,7 +475,7 @@ SnapBuildBuildSnapshot(SnapBuild *builder)
 
 	snapshot = MemoryContextAllocZero(builder->context, ssize);
 
-	snapshot->satisfies = HeapTupleSatisfiesHistoricMVCC;
+	snapshot->snapshot_type = SNAPSHOT_HISTORIC_MVCC;
 
 	/*
 	 * We misuse the original meaning of SnapshotData's xip and subxip fields
@@ -1120,7 +1119,7 @@ SnapBuildProcessRunningXacts(SnapBuild *builder, XLogRecPtr lsn, xl_running_xact
 	 * NB: We only increase xmax when a catalog modifying transaction commits
 	 * (see SnapBuildCommitTxn).  Because of this, xmax can be lower than
 	 * xmin, which looks odd but is correct and actually more efficient, since
-	 * we hit fast paths in tqual.c.
+	 * we hit fast paths in heapam_visibility.c.
 	 */
 	builder->xmin = running->oldestRunningXid;
 

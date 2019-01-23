@@ -20,8 +20,9 @@
  */
 #include "postgres.h"
 
-#include "access/heapam.h"
+#include "access/relation.h"
 #include "access/sysattr.h"
+#include "access/table.h"
 #include "catalog/dependency.h"
 #include "catalog/pg_type.h"
 #include "commands/trigger.h"
@@ -179,7 +180,7 @@ AcquireRewriteLocks(Query *parsetree,
 				else
 					lockmode = rte->rellockmode;
 
-				rel = heap_open(rte->relid, lockmode);
+				rel = table_open(rte->relid, lockmode);
 
 				/*
 				 * While we have the relation open, update the RTE's relkind,
@@ -187,7 +188,7 @@ AcquireRewriteLocks(Query *parsetree,
 				 */
 				rte->relkind = rel->rd_rel->relkind;
 
-				heap_close(rel, NoLock);
+				table_close(rel, NoLock);
 				break;
 
 			case RTE_JOIN:
@@ -1812,7 +1813,7 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 		 * We can use NoLock here since either the parser or
 		 * AcquireRewriteLocks should have locked the rel already.
 		 */
-		rel = heap_open(rte->relid, NoLock);
+		rel = table_open(rte->relid, NoLock);
 
 		/*
 		 * Collect the RIR rules that we must apply
@@ -1859,7 +1860,7 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 			}
 		}
 
-		heap_close(rel, NoLock);
+		table_close(rel, NoLock);
 	}
 
 	/* Recurse into subqueries in WITH */
@@ -1903,7 +1904,7 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 			 rte->relkind != RELKIND_PARTITIONED_TABLE))
 			continue;
 
-		rel = heap_open(rte->relid, NoLock);
+		rel = table_open(rte->relid, NoLock);
 
 		/*
 		 * Fetch any new security quals that must be applied to this RTE.
@@ -1978,7 +1979,7 @@ fireRIRrules(Query *parsetree, List *activeRIRs)
 		if (hasSubLinks)
 			parsetree->hasSubLinks = true;
 
-		heap_close(rel, NoLock);
+		table_close(rel, NoLock);
 	}
 
 	return parsetree;
@@ -2895,7 +2896,7 @@ rewriteTargetView(Query *parsetree, Relation view)
 	 * already have the right lock!)  Since it will become the query target
 	 * relation, RowExclusiveLock is always the right thing.
 	 */
-	base_rel = heap_open(base_rte->relid, RowExclusiveLock);
+	base_rel = table_open(base_rte->relid, RowExclusiveLock);
 
 	/*
 	 * While we have the relation open, update the RTE's relkind, just in case
@@ -3280,7 +3281,7 @@ rewriteTargetView(Query *parsetree, Relation view)
 		}
 	}
 
-	heap_close(base_rel, NoLock);
+	table_close(base_rel, NoLock);
 
 	return parsetree;
 }
@@ -3390,7 +3391,7 @@ RewriteQuery(Query *parsetree, List *rewrite_events)
 		 * We can use NoLock here since either the parser or
 		 * AcquireRewriteLocks should have locked the rel already.
 		 */
-		rt_entry_relation = heap_open(rt_entry->relid, NoLock);
+		rt_entry_relation = table_open(rt_entry->relid, NoLock);
 
 		/*
 		 * Rewrite the targetlist as needed for the command type.
@@ -3615,7 +3616,7 @@ RewriteQuery(Query *parsetree, List *rewrite_events)
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("INSERT with ON CONFLICT clause cannot be used with table that has INSERT or UPDATE rules")));
 
-		heap_close(rt_entry_relation, NoLock);
+		table_close(rt_entry_relation, NoLock);
 	}
 
 	/*

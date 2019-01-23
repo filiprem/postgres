@@ -65,7 +65,6 @@
 #include "utils/rls.h"
 #include "utils/ruleutils.h"
 #include "utils/snapmgr.h"
-#include "utils/tqual.h"
 
 
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
@@ -1423,7 +1422,7 @@ ExecGetTriggerResultRel(EState *estate, Oid relid)
 	 * event got queued, so we need take no new lock here.  Also, we need not
 	 * recheck the relkind, so no need for CheckValidResultRel.
 	 */
-	rel = heap_open(relid, NoLock);
+	rel = table_open(relid, NoLock);
 
 	/*
 	 * Make the new entry in the right context.
@@ -1472,7 +1471,7 @@ ExecCleanUpTriggerState(EState *estate)
 		 */
 		Assert(resultRelInfo->ri_NumIndices == 0);
 
-		heap_close(resultRelInfo->ri_RelationDesc, NoLock);
+		table_close(resultRelInfo->ri_RelationDesc, NoLock);
 	}
 }
 
@@ -1578,7 +1577,7 @@ ExecEndPlan(PlanState *planstate, EState *estate)
 	for (i = 0; i < num_relations; i++)
 	{
 		if (estate->es_relations[i])
-			heap_close(estate->es_relations[i], NoLock);
+			table_close(estate->es_relations[i], NoLock);
 	}
 
 	/* likewise close any trigger target relations */

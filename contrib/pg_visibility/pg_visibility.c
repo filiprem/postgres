@@ -21,6 +21,7 @@
 #include "storage/procarray.h"
 #include "storage/smgr.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 
 PG_MODULE_MAGIC;
 

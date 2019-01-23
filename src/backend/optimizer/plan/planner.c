@@ -19,10 +19,10 @@
 #include <math.h>
 
 #include "access/genam.h"
-#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/parallel.h"
 #include "access/sysattr.h"
+#include "access/table.h"
 #include "access/xact.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_proc.h"
@@ -6192,7 +6192,7 @@ plan_create_index_workers(Oid tableOid, Oid indexOid)
 	/* Build RelOptInfo */
 	rel = build_simple_rel(root, 1, NULL);
 
-	heap = heap_open(tableOid, NoLock);
+	heap = table_open(tableOid, NoLock);
 	index = index_open(indexOid, NoLock);
 
 	/*
@@ -6253,7 +6253,7 @@ plan_create_index_workers(Oid tableOid, Oid indexOid)
 
 done:
 	index_close(index, NoLock);
-	heap_close(heap, NoLock);
+	table_close(heap, NoLock);
 
 	return parallel_workers;
 }

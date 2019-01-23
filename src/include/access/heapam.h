@@ -14,8 +14,10 @@
 #ifndef HEAPAM_H
 #define HEAPAM_H
 
+#include "access/relation.h"	/* for backward compatibility */
 #include "access/sdir.h"
 #include "access/skey.h"
+#include "access/table.h"		/* for backward compatibility */
 #include "nodes/lockoptions.h"
 #include "nodes/primnodes.h"
 #include "storage/bufpage.h"
@@ -58,6 +60,15 @@ typedef struct HeapUpdateFailureData
 	CommandId	cmax;
 } HeapUpdateFailureData;
 
+/* Result codes for HeapTupleSatisfiesVacuum */
+typedef enum
+{
+	HEAPTUPLE_DEAD,				/* tuple is dead and deletable */
+	HEAPTUPLE_LIVE,				/* tuple is live (committed, no deleter) */
+	HEAPTUPLE_RECENTLY_DEAD,	/* tuple is dead, but not deletable yet */
+	HEAPTUPLE_INSERT_IN_PROGRESS,	/* inserting xact is still in progress */
+	HEAPTUPLE_DELETE_IN_PROGRESS	/* deleting xact is still in progress */
+} HTSV_Result;
 
 /* ----------------
  *		function prototypes for heap access method
@@ -67,20 +78,6 @@ typedef struct HeapUpdateFailureData
  * ----------------
  */
 
-/* in heap/heapam.c */
-extern Relation relation_open(Oid relationId, LOCKMODE lockmode);
-extern Relation try_relation_open(Oid relationId, LOCKMODE lockmode);
-extern Relation relation_openrv(const RangeVar *relation, LOCKMODE lockmode);
-extern Relation relation_openrv_extended(const RangeVar *relation,
-						 LOCKMODE lockmode, bool missing_ok);
-extern void relation_close(Relation relation, LOCKMODE lockmode);
-
-extern Relation heap_open(Oid relationId, LOCKMODE lockmode);
-extern Relation heap_openrv(const RangeVar *relation, LOCKMODE lockmode);
-extern Relation heap_openrv_extended(const RangeVar *relation,
-					 LOCKMODE lockmode, bool missing_ok);
-
-#define heap_close(r,l)  relation_close(r,l)
 
 /* struct definitions appear in relscan.h */
 typedef struct HeapScanDescData *HeapScanDesc;
@@ -190,4 +187,29 @@ extern Size SyncScanShmemSize(void);
 struct VacuumParams;
 extern void heap_vacuum_rel(Relation onerel, int options,
 				struct VacuumParams *params, BufferAccessStrategy bstrategy);
+
+/* in heap/heapam_visibility.c */
+extern bool HeapTupleSatisfiesVisibility(HeapTuple stup, Snapshot snapshot,
+										 Buffer buffer);
+extern HTSU_Result HeapTupleSatisfiesUpdate(HeapTuple stup, CommandId curcid,
+						 Buffer buffer);
+extern HTSV_Result HeapTupleSatisfiesVacuum(HeapTuple stup, TransactionId OldestXmin,
+						 Buffer buffer);
+extern void HeapTupleSetHintBits(HeapTupleHeader tuple, Buffer buffer,
+					 uint16 infomask, TransactionId xid);
+extern bool HeapTupleHeaderIsOnlyLocked(HeapTupleHeader tuple);
+extern bool XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
+extern bool HeapTupleIsSurelyDead(HeapTuple htup, TransactionId OldestXmin);
+
+/*
+ * To avoid leaking too much knowledge about reorderbuffer implementation
+ * details this is implemented in reorderbuffer.c not heapam_visibility.c
+ */
+struct HTAB;
+extern bool ResolveCminCmaxDuringDecoding(struct HTAB *tuplecid_data,
+							  Snapshot snapshot,
+							  HeapTuple htup,
+							  Buffer buffer,
+							  CommandId *cmin, CommandId *cmax);
+
 #endif							/* HEAPAM_H */

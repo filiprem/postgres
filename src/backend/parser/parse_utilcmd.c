@@ -27,9 +27,10 @@
 #include "postgres.h"
 
 #include "access/amapi.h"
-#include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/relation.h"
 #include "access/reloptions.h"
+#include "access/table.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
 #include "catalog/index.h"
@@ -1199,7 +1200,7 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 	 * commit.  That will prevent someone else from deleting or ALTERing the
 	 * parent before the child is committed.
 	 */
-	heap_close(relation, NoLock);
+	table_close(relation, NoLock);
 }
 
 static void
@@ -1503,7 +1504,7 @@ generateClonedIndexStmt(RangeVar *heapRel, Oid heapRelid, Relation source_idx,
 		iparam->nulls_ordering = SORTBY_NULLS_DEFAULT;
 
 		/* Adjust options if necessary */
-		if (source_idx->rd_amroutine->amcanorder)
+		if (source_idx->rd_indam->amcanorder)
 		{
 			/*
 			 * If it supports sort ordering, copy DESC and NULLS opts. Don't
@@ -2156,7 +2157,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 					Relation	rel;
 					int			count;
 
-					rel = heap_openrv(inh, AccessShareLock);
+					rel = table_openrv(inh, AccessShareLock);
 					/* check user requested inheritance from valid relkind */
 					if (rel->rd_rel->relkind != RELKIND_RELATION &&
 						rel->rd_rel->relkind != RELKIND_FOREIGN_TABLE &&
@@ -2186,7 +2187,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 							break;
 						}
 					}
-					heap_close(rel, NoLock);
+					table_close(rel, NoLock);
 					if (found)
 						break;
 				}
@@ -2279,7 +2280,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 					Relation	rel;
 					int			count;
 
-					rel = heap_openrv(inh, AccessShareLock);
+					rel = table_openrv(inh, AccessShareLock);
 					/* check user requested inheritance from valid relkind */
 					if (rel->rd_rel->relkind != RELKIND_RELATION &&
 						rel->rd_rel->relkind != RELKIND_FOREIGN_TABLE &&
@@ -2309,7 +2310,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 							break;
 						}
 					}
-					heap_close(rel, NoLock);
+					table_close(rel, NoLock);
 					if (found)
 						break;
 				}
@@ -2549,7 +2550,7 @@ transformIndexStmt(Oid relid, IndexStmt *stmt, const char *queryString)
 	free_parsestate(pstate);
 
 	/* Close relation */
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	/* Mark statement as successfully transformed */
 	stmt->transformed = true;
@@ -2585,7 +2586,7 @@ transformRuleStmt(RuleStmt *stmt, const char *queryString,
 	 * DefineQueryRewrite(), and we don't want to grab a lesser lock
 	 * beforehand.
 	 */
-	rel = heap_openrv(stmt->relation, AccessExclusiveLock);
+	rel = table_openrv(stmt->relation, AccessExclusiveLock);
 
 	if (rel->rd_rel->relkind == RELKIND_MATVIEW)
 		ereport(ERROR,
@@ -2863,7 +2864,7 @@ transformRuleStmt(RuleStmt *stmt, const char *queryString,
 	free_parsestate(pstate);
 
 	/* Close relation, but keep the exclusive lock */
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 }
 
 

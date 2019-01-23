@@ -14,8 +14,8 @@
 #include "postgres.h"
 
 #include "access/genam.h"
-#include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/table.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
@@ -38,7 +38,6 @@
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
-#include "utils/tqual.h"
 
 
 typedef struct
@@ -335,7 +334,7 @@ create_proc_lang(const char *languageName, bool replace,
 	ObjectAddress myself,
 				referenced;
 
-	rel = heap_open(LanguageRelationId, RowExclusiveLock);
+	rel = table_open(LanguageRelationId, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* Prepare data to be inserted */
@@ -444,7 +443,7 @@ create_proc_lang(const char *languageName, bool replace,
 	/* Post creation hook for new procedural language */
 	InvokeObjectPostCreateHook(LanguageRelationId, myself.objectId, 0);
 
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return myself;
 }
@@ -461,7 +460,7 @@ find_language_template(const char *languageName)
 	ScanKeyData key;
 	HeapTuple	tup;
 
-	rel = heap_open(PLTemplateRelationId, AccessShareLock);
+	rel = table_open(PLTemplateRelationId, AccessShareLock);
 
 	ScanKeyInit(&key,
 				Anum_pg_pltemplate_tmplname,
@@ -511,7 +510,7 @@ find_language_template(const char *languageName)
 
 	systable_endscan(scan);
 
-	heap_close(rel, AccessShareLock);
+	table_close(rel, AccessShareLock);
 
 	return result;
 }
@@ -535,7 +534,7 @@ DropProceduralLanguageById(Oid langOid)
 	Relation	rel;
 	HeapTuple	langTup;
 
-	rel = heap_open(LanguageRelationId, RowExclusiveLock);
+	rel = table_open(LanguageRelationId, RowExclusiveLock);
 
 	langTup = SearchSysCache1(LANGOID, ObjectIdGetDatum(langOid));
 	if (!HeapTupleIsValid(langTup)) /* should not happen */
@@ -545,7 +544,7 @@ DropProceduralLanguageById(Oid langOid)
 
 	ReleaseSysCache(langTup);
 
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 }
 
 /*

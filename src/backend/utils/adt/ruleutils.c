@@ -20,9 +20,10 @@
 #include <fcntl.h>
 
 #include "access/amapi.h"
-#include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/relation.h"
 #include "access/sysattr.h"
+#include "access/table.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_aggregate.h"
@@ -69,7 +70,6 @@
 #include "utils/ruleutils.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
-#include "utils/tqual.h"
 #include "utils/typcache.h"
 #include "utils/varlena.h"
 #include "utils/xml.h"
@@ -841,7 +841,7 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	/*
 	 * Fetch the pg_trigger tuple by the Oid of the trigger
 	 */
-	tgrel = heap_open(TriggerRelationId, AccessShareLock);
+	tgrel = table_open(TriggerRelationId, AccessShareLock);
 
 	ScanKeyInit(&skey[0],
 				Anum_pg_trigger_oid,
@@ -856,7 +856,7 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	if (!HeapTupleIsValid(ht_trig))
 	{
 		systable_endscan(tgscan);
-		heap_close(tgrel, AccessShareLock);
+		table_close(tgrel, AccessShareLock);
 		return NULL;
 	}
 
@@ -1077,7 +1077,7 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	/* Clean up */
 	systable_endscan(tgscan);
 
-	heap_close(tgrel, AccessShareLock);
+	table_close(tgrel, AccessShareLock);
 
 	return buf.data;
 }
@@ -1881,7 +1881,7 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 	SysScanDesc scandesc;
 	ScanKeyData scankey[1];
 	Snapshot	snapshot = RegisterSnapshot(GetTransactionSnapshot());
-	Relation	relation = heap_open(ConstraintRelationId, AccessShareLock);
+	Relation	relation = table_open(ConstraintRelationId, AccessShareLock);
 
 	ScanKeyInit(&scankey[0],
 				Anum_pg_constraint_oid,
@@ -1908,7 +1908,7 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 		if (missing_ok)
 		{
 			systable_endscan(scandesc);
-			heap_close(relation, AccessShareLock);
+			table_close(relation, AccessShareLock);
 			return NULL;
 		}
 		elog(ERROR, "could not find tuple for constraint %u", constraintId);
@@ -2259,7 +2259,7 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 
 	/* Cleanup */
 	systable_endscan(scandesc);
-	heap_close(relation, AccessShareLock);
+	table_close(relation, AccessShareLock);
 
 	return buf.data;
 }
@@ -2470,7 +2470,7 @@ pg_get_serial_sequence(PG_FUNCTION_ARGS)
 						column, tablerv->relname)));
 
 	/* Search the dependency table for the dependent sequence */
-	depRel = heap_open(DependRelationId, AccessShareLock);
+	depRel = table_open(DependRelationId, AccessShareLock);
 
 	ScanKeyInit(&key[0],
 				Anum_pg_depend_refclassid,
@@ -2509,7 +2509,7 @@ pg_get_serial_sequence(PG_FUNCTION_ARGS)
 	}
 
 	systable_endscan(scan);
-	heap_close(depRel, AccessShareLock);
+	table_close(depRel, AccessShareLock);
 
 	if (OidIsValid(sequenceId))
 	{
@@ -4789,7 +4789,7 @@ make_ruledef(StringInfo buf, HeapTuple ruletup, TupleDesc rulettc,
 	if (ev_action != NULL)
 		actions = (List *) stringToNode(ev_action);
 
-	ev_relation = heap_open(ev_class, AccessShareLock);
+	ev_relation = table_open(ev_class, AccessShareLock);
 
 	/*
 	 * Build the rules definition text
@@ -4923,7 +4923,7 @@ make_ruledef(StringInfo buf, HeapTuple ruletup, TupleDesc rulettc,
 		appendStringInfoChar(buf, ';');
 	}
 
-	heap_close(ev_relation, AccessShareLock);
+	table_close(ev_relation, AccessShareLock);
 }
 
 
@@ -4990,13 +4990,13 @@ make_viewdef(StringInfo buf, HeapTuple ruletup, TupleDesc rulettc,
 		return;
 	}
 
-	ev_relation = heap_open(ev_class, AccessShareLock);
+	ev_relation = table_open(ev_class, AccessShareLock);
 
 	get_query_def(query, buf, NIL, RelationGetDescr(ev_relation),
 				  prettyFlags, wrapColumn, 0);
 	appendStringInfoChar(buf, ';');
 
-	heap_close(ev_relation, AccessShareLock);
+	table_close(ev_relation, AccessShareLock);
 }
 
 

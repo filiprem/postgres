@@ -103,9 +103,9 @@
 
 #include "access/brin.h"
 #include "access/gin.h"
-#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/sysattr.h"
+#include "access/table.h"
 #include "catalog/index.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_collation.h"
@@ -146,7 +146,6 @@
 #include "utils/spccache.h"
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
-#include "utils/tqual.h"
 #include "utils/typcache.h"
 #include "utils/varlena.h"
 
@@ -5547,7 +5546,7 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 			 * already have at least AccessShareLock on the table, but not
 			 * necessarily on the index.
 			 */
-			heapRel = heap_open(rte->relid, NoLock);
+			heapRel = table_open(rte->relid, NoLock);
 			indexRel = index_open(index->indexoid, AccessShareLock);
 
 			/* extract index key information from the index's pg_index info */
@@ -5668,7 +5667,7 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 			ExecDropSingleTupleTableSlot(slot);
 
 			index_close(indexRel, AccessShareLock);
-			heap_close(heapRel, NoLock);
+			table_close(heapRel, NoLock);
 
 			MemoryContextSwitchTo(oldcontext);
 			FreeExecutorState(estate);

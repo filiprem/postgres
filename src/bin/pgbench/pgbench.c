@@ -407,12 +407,12 @@ typedef struct
 } CState;
 
 /*
- * Cache cell for zipfian_random call
+ * Cache cell for random_zipfian call
  */
 typedef struct
 {
 	/* cell keys */
-	double		s;				/* s - parameter of zipfan_random function */
+	double		s;				/* s - parameter of random_zipfian function */
 	int64		n;				/* number of elements in range (max - min + 1) */
 
 	double		harmonicn;		/* generalizedHarmonicNumber(n, s) */
@@ -690,7 +690,7 @@ usage(void)
 		   "  -V, --version            output version information, then exit\n"
 		   "  -?, --help               show this help, then exit\n"
 		   "\n"
-		   "Report bugs to <pgsql-bugs@postgresql.org>.\n",
+		   "Report bugs to <pgsql-bugs@lists.postgresql.org>.\n",
 		   progname, progname);
 }
 
@@ -4754,8 +4754,8 @@ ParseScript(const char *script, const char *desc, int weight)
 
 		/*
 		 * Since we used a command slot, allocate more if needed.  Note we
-		 * always allocate one more in order to accomodate the NULL terminator
-		 * below.
+		 * always allocate one more in order to accommodate the NULL
+		 * terminator below.
 		 */
 		if (index >= alloc_num)
 		{

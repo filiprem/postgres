@@ -15,9 +15,10 @@
 #include "postgres.h"
 
 #include "access/bufmask.h"
-#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/multixact.h"
+#include "access/relation.h"
+#include "access/table.h"
 #include "access/transam.h"
 #include "access/xact.h"
 #include "access/xlog.h"
@@ -216,7 +217,7 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 	seqoid = address.objectId;
 	Assert(seqoid != InvalidOid);
 
-	rel = heap_open(seqoid, AccessExclusiveLock);
+	rel = table_open(seqoid, AccessExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	/* now initialize the sequence's data */
@@ -227,10 +228,10 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 	if (owned_by)
 		process_owned_by(rel, owned_by, seq->for_identity);
 
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	/* fill in pg_sequence */
-	rel = heap_open(SequenceRelationId, RowExclusiveLock);
+	rel = table_open(SequenceRelationId, RowExclusiveLock);
 	tupDesc = RelationGetDescr(rel);
 
 	memset(pgs_nulls, 0, sizeof(pgs_nulls));
@@ -248,7 +249,7 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 	CatalogTupleInsert(rel, tuple);
 
 	heap_freetuple(tuple);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 
 	return address;
 }
@@ -445,7 +446,7 @@ AlterSequence(ParseState *pstate, AlterSeqStmt *stmt)
 
 	init_sequence(relid, &elm, &seqrel);
 
-	rel = heap_open(SequenceRelationId, RowExclusiveLock);
+	rel = table_open(SequenceRelationId, RowExclusiveLock);
 	seqtuple = SearchSysCacheCopy1(SEQRELID,
 								   ObjectIdGetDatum(relid));
 	if (!HeapTupleIsValid(seqtuple))
@@ -505,7 +506,7 @@ AlterSequence(ParseState *pstate, AlterSeqStmt *stmt)
 
 	ObjectAddressSet(address, RelationRelationId, relid);
 
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 	relation_close(seqrel, NoLock);
 
 	return address;
@@ -517,7 +518,7 @@ DeleteSequenceTuple(Oid relid)
 	Relation	rel;
 	HeapTuple	tuple;
 
-	rel = heap_open(SequenceRelationId, RowExclusiveLock);
+	rel = table_open(SequenceRelationId, RowExclusiveLock);
 
 	tuple = SearchSysCache1(SEQRELID, ObjectIdGetDatum(relid));
 	if (!HeapTupleIsValid(tuple))
@@ -526,7 +527,7 @@ DeleteSequenceTuple(Oid relid)
 	CatalogTupleDelete(rel, &tuple->t_self);
 
 	ReleaseSysCache(tuple);
-	heap_close(rel, RowExclusiveLock);
+	table_close(rel, RowExclusiveLock);
 }
 
 /*

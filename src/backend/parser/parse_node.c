@@ -14,8 +14,8 @@
  */
 #include "postgres.h"
 
-#include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/table.h"
 #include "catalog/pg_type.h"
 #include "mb/pg_wchar.h"
 #include "nodes/makefuncs.h"
@@ -88,7 +88,7 @@ free_parsestate(ParseState *pstate)
 						MaxTupleAttributeNumber)));
 
 	if (pstate->p_target_relation != NULL)
-		heap_close(pstate->p_target_relation, NoLock);
+		table_close(pstate->p_target_relation, NoLock);
 
 	pfree(pstate);
 }

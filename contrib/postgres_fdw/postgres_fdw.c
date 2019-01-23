@@ -14,9 +14,9 @@
 
 #include "postgres_fdw.h"
 
-#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/sysattr.h"
+#include "access/table.h"
 #include "catalog/pg_class.h"
 #include "commands/defrem.h"
 #include "commands/explain.h"
@@ -1616,7 +1616,7 @@ postgresPlanForeignModify(PlannerInfo *root,
 	 * Core code already has some lock on each rel being planned, so we can
 	 * use NoLock here.
 	 */
-	rel = heap_open(rte->relid, NoLock);
+	rel = table_open(rte->relid, NoLock);
 
 	/*
 	 * In an INSERT, we transmit all columns that are defined in the foreign
@@ -1706,7 +1706,7 @@ postgresPlanForeignModify(PlannerInfo *root,
 			break;
 	}
 
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	/*
 	 * Build the fdw_private list that will be available to the executor.
@@ -2121,7 +2121,7 @@ postgresPlanDirectModify(PlannerInfo *root,
 	 * Core code already has some lock on each rel being planned, so we can
 	 * use NoLock here.
 	 */
-	rel = heap_open(rte->relid, NoLock);
+	rel = table_open(rte->relid, NoLock);
 
 	/*
 	 * Recall the qual clauses that must be evaluated remotely.  (These are
@@ -2207,7 +2207,7 @@ postgresPlanDirectModify(PlannerInfo *root,
 			rebuild_fdw_scan_tlist(fscan, returningList);
 	}
 
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 	return true;
 }
 
@@ -2771,7 +2771,7 @@ estimate_path_cost_size(PlannerInfo *root,
 			run_cost += cpu_tuple_cost * numGroups;
 			run_cost += ptarget->cost.per_tuple * numGroups;
 
-			/* Accout for the eval cost of HAVING quals, if any */
+			/* Account for the eval cost of HAVING quals, if any */
 			if (root->parse->havingQual)
 			{
 				QualCost	remote_cost;
