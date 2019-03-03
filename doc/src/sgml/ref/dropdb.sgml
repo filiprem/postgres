@@ -94,12 +94,12 @@ PostgreSQL documentation
        <para>
        Force termination of connected backends before removing the database.
        </para>
-	   <para>
-	   This will update the <literal>datallowconn</literal> attribute to
-	   disallow incoming connections to target database, send
-	   <literal>SIGTERM</literal> to target backends, and sleep some time
-	   to allow the sessions to terminate.
-	   </para>
+       <para>
+       This will update the <literal>datallowconn</literal> attribute to
+       disallow incoming connections to target database, send
+       <literal>SIGTERM</literal> to target backends, and sleep some time
+       to allow the sessions to terminate.
+       </para>
       </listitem>
      </varlistentry>
 
