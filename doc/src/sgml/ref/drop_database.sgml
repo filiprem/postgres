@@ -21,7 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-DROP DATABASE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
+DROP DATABASE [ IF EXISTS ] <replaceable class="parameter">name</replaceable> [ FORCE ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -32,9 +32,9 @@ DROP DATABASE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
    <command>DROP DATABASE</command> drops a database. It removes the
    catalog entries for the database and deletes the directory
    containing the data.  It can only be executed by the database owner.
-   Also, it cannot be executed while you or anyone else are connected
-   to the target database.  (Connect to <literal>postgres</literal> or any
-   other database to issue this command.)
+   Also, it cannot be executed while you are connected to the target database.
+   (Connect to <literal>postgres</literal> or any other database to issue this
+   command.)
   </para>
 
   <para>
@@ -64,6 +64,22 @@ DROP DATABASE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
      </para>
     </listitem>
    </varlistentry>
+
+   <varlistentry>
+    <term><literal>FORCE</literal></term>
+    <listitem>
+     <para>
+      Force termination of connected backends before removing the database.
+     </para>
+     <para>
+      This will update the <literal>datallowconn</literal> attribute to
+      disallow incoming connections to target database, send
+      <literal>SIGTERM</literal> to target backends, and wait some time to
+      allow the sessions to terminate.
+     </para>
+    </listitem>
+   </varlistentry>
+
   </variablelist>
  </refsect1>
 
@@ -79,8 +95,7 @@ DROP DATABASE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
    This command cannot be executed while connected to the target
    database. Thus, it might be more convenient to use the program
    <xref linkend="app-dropdb"/> instead,
-   which is a wrapper around this command, and is also able
-   to terminate existing connections.
+   which is a wrapper around this command.
   </para>
  </refsect1>
 

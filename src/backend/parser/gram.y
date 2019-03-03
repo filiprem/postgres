@@ -10125,6 +10125,7 @@ DropdbStmt: DROP DATABASE database_name
 					DropdbStmt *n = makeNode(DropdbStmt);
 					n->dbname = $3;
 					n->missing_ok = false;
+					n->force = false;
 					$$ = (Node *)n;
 				}
 			| DROP DATABASE IF_P EXISTS database_name
@@ -10132,6 +10133,23 @@ DropdbStmt: DROP DATABASE database_name
 					DropdbStmt *n = makeNode(DropdbStmt);
 					n->dbname = $5;
 					n->missing_ok = true;
+					n->force = false;
+					$$ = (Node *)n;
+				}
+			| DROP DATABASE database_name FORCE
+				{
+					DropdbStmt *n = makeNode(DropdbStmt);
+					n->dbname = $3;
+					n->missing_ok = false;
+					n->force = true;
+					$$ = (Node *)n;
+				}
+			| DROP DATABASE IF_P EXISTS database_name FORCE
+				{
+					DropdbStmt *n = makeNode(DropdbStmt);
+					n->dbname = $5;
+					n->missing_ok = true;
+					n->force = true;
 					$$ = (Node *)n;
 				}
 		;

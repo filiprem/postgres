@@ -42,9 +42,8 @@ PostgreSQL documentation
   <para>
    <application>dropdb</application> is a wrapper around the
    <acronym>SQL</acronym> command <xref linkend="sql-dropdatabase"/>.
-   Other than the <option>--force</option> option, there is no effective
-   difference between dropping databases via this utility and via other
-   methods for accessing the server.
+   There is no effective difference between dropping databases via
+   this utility and via other methods for accessing the server.
   </para>
 
  </refsect1>
@@ -92,13 +91,11 @@ PostgreSQL documentation
       <term><option>--force</option></term>
       <listitem>
        <para>
-       Force termination of connected backends before removing the database.
+        Force termination of connected backends before removing the database.
        </para>
        <para>
-       This will update the <literal>datallowconn</literal> attribute to
-       disallow incoming connections to target database, send
-       <literal>SIGTERM</literal> to target backends, and sleep some time
-       to allow the sessions to terminate.
+        This will add the <literal>FORCE</literal> option to the <literal>DROP
+        DATABASE</literal> command sent to the server.
        </para>
       </listitem>
      </varlistentry>

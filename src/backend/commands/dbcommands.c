@@ -487,7 +487,7 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
 	 * potential waiting; we may as well throw an error first if we're gonna
 	 * throw one.
 	 */
-	if (CountOtherDBBackends(src_dboid, &notherbackends, &npreparedxacts))
+	if (CountOtherDBBackends(src_dboid, &notherbackends, &npreparedxacts, false))
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_IN_USE),
 				 errmsg("source database \"%s\" is being accessed by other users",
@@ -777,7 +777,7 @@ createdb_failure_callback(int code, Datum arg)
  * DROP DATABASE
  */
 void
-dropdb(const char *dbname, bool missing_ok)
+dropdb(const char *dbname, bool missing_ok, bool force)
 {
 	Oid			db_id;
 	bool		db_istemplate;
@@ -785,6 +785,7 @@ dropdb(const char *dbname, bool missing_ok)
 	HeapTuple	tup;
 	int			notherbackends;
 	int			npreparedxacts;
+	int			loops = 0;
 	int			nslots,
 				nslots_active;
 	int			nsubscriptions;
@@ -868,12 +869,33 @@ dropdb(const char *dbname, bool missing_ok)
 	 *
 	 * As in CREATE DATABASE, check this after other error conditions.
 	 */
-	if (CountOtherDBBackends(db_id, &notherbackends, &npreparedxacts))
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_IN_USE),
-				 errmsg("database \"%s\" is being accessed by other users",
-						dbname),
-				 errdetail_busy_db(notherbackends, npreparedxacts)));
+	for (;;)
+	{
+		/*
+		 * CountOtherDBBackends check usage of database by other backends and try
+		 * to wait 5 sec. We try to raise warning after 1 minute and and raise
+		 * a error after 5 minutes.
+		 */
+		if (!CountOtherDBBackends(db_id, &notherbackends, &npreparedxacts, force))
+			break;
+
+		if (force && loops++ % 12 == 0)
+			ereport(WARNING,
+					(errcode(ERRCODE_OBJECT_IN_USE),
+				errmsg("source database \"%s\" is being accessed by other users",
+					   dbname),
+					 errdetail_busy_db(notherbackends, npreparedxacts)));
+
+		/* without "force" flag raise exception immediately, or after 5 minutes */
+		if (!force || loops % 60 == 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_IN_USE),
+				errmsg("source database \"%s\" is being accessed by other users",
+					   dbname),
+					 errdetail_busy_db(notherbackends, npreparedxacts)));
+
+		CHECK_FOR_INTERRUPTS();
+	}
 
 	/*
 	 * Check if there are subscriptions defined in the target database.
@@ -1032,7 +1054,7 @@ RenameDatabase(const char *oldname, const char *newname)
 	 *
 	 * As in CREATE DATABASE, check this after other error conditions.
 	 */
-	if (CountOtherDBBackends(db_id, &notherbackends, &npreparedxacts))
+	if (CountOtherDBBackends(db_id, &notherbackends, &npreparedxacts, false))
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_IN_USE),
 				 errmsg("database \"%s\" is being accessed by other users",
@@ -1162,7 +1184,7 @@ movedb(const char *dbname, const char *tblspcname)
 	 *
 	 * As in CREATE DATABASE, check this after other error conditions.
 	 */
-	if (CountOtherDBBackends(db_id, &notherbackends, &npreparedxacts))
+	if (CountOtherDBBackends(db_id, &notherbackends, &npreparedxacts, false))
 		ereport(ERROR,
 				(errcode(ERRCODE_OBJECT_IN_USE),
 				 errmsg("database \"%s\" is being accessed by other users",

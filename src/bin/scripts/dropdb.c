@@ -138,63 +138,8 @@ main(int argc, char *argv[])
 									  host, port, username, prompt_password,
 									  progname, echo);
 
-	if (force)
-	{
-		/* TODO: revert this UPDATE in case removal fails for any reason */
-		appendPQExpBufferStr(&sql,
-							 "UPDATE pg_catalog.pg_database\n"
-							 " SET datallowconn = 'false'\n"
-							 " WHERE datname OPERATOR(pg_catalog.=) ");
-		appendStringLiteralConn(&sql, dbname, conn);
-		appendPQExpBufferStr(&sql, ";\n");
-		if (echo)
-			printf("%s\n", sql.data);
-		result = PQexec(conn, sql.data);
-		if (PQresultStatus(result) != PGRES_COMMAND_OK)
-		{
-			fprintf(stderr, _("%s: database removal failed: %s"),
-					progname, PQerrorMessage(conn));
-			PQfinish(conn);
-			exit(1);
-		}
-
-		PQclear(result);
-
-		resetPQExpBuffer(&sql);
-
-		appendPQExpBufferStr(&sql,
-							"SELECT pg_catalog.pg_terminate_backend(pid)\n"
-							" FROM pg_catalog.pg_stat_activity\n"
-							" WHERE pid OPERATOR(pg_catalog.<>) pg_catalog.pg_backend_pid()\n"
-							" AND datname OPERATOR(pg_catalog.=) ");
-		appendStringLiteralConn(&sql, dbname, conn);
-		appendPQExpBufferStr(&sql, ";\n");
-
-		if (echo)
-			printf("%s\n", sql.data);
-		result = PQexec(conn, sql.data);
-		if (PQresultStatus(result) == PGRES_TUPLES_OK)
-		{
-			if (PQntuples(result) > 0)
-				printf("%s: sent SIGTERM to %d backend(s)\n",
-					   progname, PQntuples(result));
-				pg_usleep(TERMINATE_SLEEP_TIME * 1000000);
-		}
-		else
-		{
-			fprintf(stderr, _("%s: database removal failed: %s"),
-					progname, PQerrorMessage(conn));
-			PQfinish(conn);
-			exit(1);
-		}
-
-		PQclear(result);
-
-		resetPQExpBuffer(&sql);
-	}
-
-	appendPQExpBuffer(&sql, "DROP DATABASE %s%s;",
-					  (if_exists ? "IF EXISTS " : ""), fmtId(dbname));
+	appendPQExpBuffer(&sql, "DROP DATABASE %s%s%s;",
+					  (if_exists ? "IF EXISTS " : ""), fmtId(dbname), (force ? " FORCE" : ""));
 
 	if (echo)
 		printf("%s\n", sql.data);
