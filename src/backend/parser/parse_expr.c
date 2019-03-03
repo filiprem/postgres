@@ -20,8 +20,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
-#include "optimizer/tlist.h"
-#include "optimizer/var.h"
+#include "optimizer/optimizer.h"
 #include "parser/analyze.h"
 #include "parser/parse_clause.h"
 #include "parser/parse_coerce.h"
@@ -466,13 +465,13 @@ transformIndirection(ParseState *pstate, A_Indirection *ind)
 
 			/* process subscripts before this field selection */
 			if (subscripts)
-				result = (Node *) transformArraySubscripts(pstate,
-														   result,
-														   exprType(result),
-														   InvalidOid,
-														   exprTypmod(result),
-														   subscripts,
-														   NULL);
+				result = (Node *) transformContainerSubscripts(pstate,
+															   result,
+															   exprType(result),
+															   InvalidOid,
+															   exprTypmod(result),
+															   subscripts,
+															   NULL);
 			subscripts = NIL;
 
 			newresult = ParseFuncOrColumn(pstate,
@@ -489,13 +488,13 @@ transformIndirection(ParseState *pstate, A_Indirection *ind)
 	}
 	/* process trailing subscripts, if any */
 	if (subscripts)
-		result = (Node *) transformArraySubscripts(pstate,
-												   result,
-												   exprType(result),
-												   InvalidOid,
-												   exprTypmod(result),
-												   subscripts,
-												   NULL);
+		result = (Node *) transformContainerSubscripts(pstate,
+													   result,
+													   exprType(result),
+													   InvalidOid,
+													   exprTypmod(result),
+													   subscripts,
+													   NULL);
 
 	return result;
 }
@@ -1842,6 +1841,9 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 			break;
 		case EXPR_KIND_TRIGGER_WHEN:
 			err = _("cannot use subquery in trigger WHEN condition");
+			break;
+		case EXPR_KIND_PARTITION_BOUND:
+			err = _("cannot use subquery in partition bound");
 			break;
 		case EXPR_KIND_PARTITION_EXPRESSION:
 			err = _("cannot use subquery in partition key expression");
@@ -3474,6 +3476,8 @@ ParseExprKindName(ParseExprKind exprKind)
 			return "EXECUTE";
 		case EXPR_KIND_TRIGGER_WHEN:
 			return "WHEN";
+		case EXPR_KIND_PARTITION_BOUND:
+			return "partition bound";
 		case EXPR_KIND_PARTITION_EXPRESSION:
 			return "PARTITION BY";
 		case EXPR_KIND_CALL_ARGUMENT:

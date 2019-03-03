@@ -56,8 +56,7 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
-#include "optimizer/clauses.h"
-#include "optimizer/planner.h"
+#include "optimizer/optimizer.h"
 #include "parser/parser.h"
 #include "rewrite/rewriteManip.h"
 #include "storage/bufmgr.h"
@@ -411,7 +410,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 			 */
 			CheckAttributeType(NameStr(to->attname),
 							   to->atttypid, to->attcollation,
-							   NIL, false);
+							   NIL, 0);
 		}
 
 		/*
@@ -1042,9 +1041,6 @@ index_create(Relation heapRelation,
 		else
 		{
 			bool		have_simple_col = false;
-			DependencyType deptype;
-
-			deptype = OidIsValid(parentIndexRelid) ? DEPENDENCY_INTERNAL_AUTO : DEPENDENCY_AUTO;
 
 			/* Create auto dependencies on simply-referenced columns */
 			for (i = 0; i < indexInfo->ii_NumIndexAttrs; i++)
@@ -1055,7 +1051,7 @@ index_create(Relation heapRelation,
 					referenced.objectId = heapRelationId;
 					referenced.objectSubId = indexInfo->ii_IndexAttrNumbers[i];
 
-					recordDependencyOn(&myself, &referenced, deptype);
+					recordDependencyOn(&myself, &referenced, DEPENDENCY_AUTO);
 
 					have_simple_col = true;
 				}
@@ -1073,18 +1069,29 @@ index_create(Relation heapRelation,
 				referenced.objectId = heapRelationId;
 				referenced.objectSubId = 0;
 
-				recordDependencyOn(&myself, &referenced, deptype);
+				recordDependencyOn(&myself, &referenced, DEPENDENCY_AUTO);
 			}
 		}
 
-		/* Store dependency on parent index, if any */
+		/*
+		 * If this is an index partition, create partition dependencies on
+		 * both the parent index and the table.  (Note: these must be *in
+		 * addition to*, not instead of, all other dependencies.  Otherwise
+		 * we'll be short some dependencies after DETACH PARTITION.)
+		 */
 		if (OidIsValid(parentIndexRelid))
 		{
 			referenced.classId = RelationRelationId;
 			referenced.objectId = parentIndexRelid;
 			referenced.objectSubId = 0;
 
-			recordDependencyOn(&myself, &referenced, DEPENDENCY_INTERNAL_AUTO);
+			recordDependencyOn(&myself, &referenced, DEPENDENCY_PARTITION_PRI);
+
+			referenced.classId = RelationRelationId;
+			referenced.objectId = heapRelationId;
+			referenced.objectSubId = 0;
+
+			recordDependencyOn(&myself, &referenced, DEPENDENCY_PARTITION_SEC);
 		}
 
 		/* Store dependency on collations */
@@ -1189,8 +1196,7 @@ index_create(Relation heapRelation,
 	}
 	else
 	{
-		index_build(heapRelation, indexRelation, indexInfo, isprimary, false,
-					true);
+		index_build(heapRelation, indexRelation, indexInfo, false, true);
 	}
 
 	/*
@@ -1344,15 +1350,17 @@ index_constraint_create(Relation heapRelation,
 	recordDependencyOn(&myself, &referenced, DEPENDENCY_INTERNAL);
 
 	/*
-	 * Also, if this is a constraint on a partition, mark it as depending on
-	 * the constraint in the parent.
+	 * Also, if this is a constraint on a partition, give it partition-type
+	 * dependencies on the parent constraint as well as the table.
 	 */
 	if (OidIsValid(parentConstraintId))
 	{
-		ObjectAddress parentConstr;
-
-		ObjectAddressSet(parentConstr, ConstraintRelationId, parentConstraintId);
-		recordDependencyOn(&referenced, &parentConstr, DEPENDENCY_INTERNAL_AUTO);
+		ObjectAddressSet(myself, ConstraintRelationId, conOid);
+		ObjectAddressSet(referenced, ConstraintRelationId, parentConstraintId);
+		recordDependencyOn(&myself, &referenced, DEPENDENCY_PARTITION_PRI);
+		ObjectAddressSet(referenced, RelationRelationId,
+						 RelationGetRelid(heapRelation));
+		recordDependencyOn(&myself, &referenced, DEPENDENCY_PARTITION_SEC);
 	}
 
 	/*
@@ -2220,12 +2228,8 @@ index_update_stats(Relation rel,
  * entries of the index and heap relation as needed, using statistics
  * returned by ambuild as well as data passed by the caller.
  *
- * isprimary tells whether to mark the index as a primary-key index.
  * isreindex indicates we are recreating a previously-existing index.
  * parallel indicates if parallelism may be useful.
- *
- * Note: when reindexing an existing index, isprimary can be false even if
- * the index is a PK; it's already properly marked and need not be re-marked.
  *
  * Note: before Postgres 8.2, the passed-in heap and index Relations
  * were automatically closed by this routine.  This is no longer the case.
@@ -2235,7 +2239,6 @@ void
 index_build(Relation heapRelation,
 			Relation indexRelation,
 			IndexInfo *indexInfo,
-			bool isprimary,
 			bool isreindex,
 			bool parallel)
 {
@@ -3702,7 +3705,7 @@ reindex_index(Oid indexId, bool skip_constraint_checks, char persistence,
 
 		/* Initialize the index and rebuild */
 		/* Note: we do not need to re-establish pkey setting */
-		index_build(heapRelation, iRel, indexInfo, false, true, true);
+		index_build(heapRelation, iRel, indexInfo, true, true);
 	}
 	PG_CATCH();
 	{

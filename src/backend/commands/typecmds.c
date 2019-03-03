@@ -56,7 +56,7 @@
 #include "executor/executor.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
-#include "optimizer/var.h"
+#include "optimizer/optimizer.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_collate.h"
 #include "parser/parse_expr.h"
@@ -1664,6 +1664,7 @@ makeRangeConstructors(const char *name, Oid namespace,
 								 NIL,	/* parameterDefaults */
 								 PointerGetDatum(NULL), /* trftypes */
 								 PointerGetDatum(NULL), /* proconfig */
+								 InvalidOid,	/* prosupport */
 								 1.0,	/* procost */
 								 0.0);	/* prorows */
 

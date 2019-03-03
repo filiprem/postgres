@@ -50,6 +50,7 @@
 #include "miscadmin.h"
 #include "optimizer/cost.h"
 #include "optimizer/geqo.h"
+#include "optimizer/optimizer.h"
 #include "optimizer/paths.h"
 #include "optimizer/planmain.h"
 #include "parser/parse_expr.h"
@@ -186,6 +187,7 @@ static const char *show_tcp_keepalives_count(void);
 static bool check_maxconnections(int *newval, void **extra, GucSource source);
 static bool check_max_worker_processes(int *newval, void **extra, GucSource source);
 static bool check_autovacuum_max_workers(int *newval, void **extra, GucSource source);
+static bool check_max_wal_senders(int *newval, void **extra, GucSource source);
 static bool check_autovacuum_work_mem(int *newval, void **extra, GucSource source);
 static bool check_effective_io_concurrency(int *newval, void **extra, GucSource source);
 static void assign_effective_io_concurrency(int newval, void *extra);
@@ -449,6 +451,19 @@ const struct config_enum_entry ssl_protocol_versions_info[] = {
 	{"TLSv1.1", PG_TLS1_1_VERSION, false},
 	{"TLSv1.2", PG_TLS1_2_VERSION, false},
 	{"TLSv1.3", PG_TLS1_3_VERSION, false},
+	{NULL, 0, false}
+};
+
+static struct config_enum_entry shared_memory_options[] = {
+#ifndef WIN32
+	{ "sysv", SHMEM_TYPE_SYSV, false},
+#endif
+#ifndef EXEC_BACKEND
+	{ "mmap", SHMEM_TYPE_MMAP, false},
+#endif
+#ifdef WIN32
+	{ "windows", SHMEM_TYPE_WINDOWS, false},
+#endif
 	{NULL, 0, false}
 };
 
@@ -2033,7 +2048,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"recovery_min_apply_delay", PGC_POSTMASTER, REPLICATION_STANDBY,
+		{"recovery_min_apply_delay", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Sets the minimum delay for applying changes during recovery."),
 			NULL,
 			GUC_UNIT_MS
@@ -2076,7 +2091,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		/* see max_connections and max_wal_senders */
+		/* see max_connections */
 		{"superuser_reserved_connections", PGC_POSTMASTER, CONN_AUTH_SETTINGS,
 			gettext_noop("Sets the number of connection slots reserved for superusers."),
 			NULL
@@ -2594,14 +2609,13 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		/* see max_connections and superuser_reserved_connections */
 		{"max_wal_senders", PGC_POSTMASTER, REPLICATION_SENDING,
 			gettext_noop("Sets the maximum number of simultaneously running WAL sender processes."),
 			NULL
 		},
 		&max_wal_senders,
 		10, 0, MAX_BACKENDS,
-		NULL, NULL, NULL
+		check_max_wal_senders, NULL, NULL
 	},
 
 	{
@@ -2653,11 +2667,12 @@ static struct config_int ConfigureNamesInt[] =
 		{"extra_float_digits", PGC_USERSET, CLIENT_CONN_LOCALE,
 			gettext_noop("Sets the number of digits displayed for floating-point values."),
 			gettext_noop("This affects real, double precision, and geometric data types. "
-						 "The parameter value is added to the standard number of digits "
-						 "(FLT_DIG or DBL_DIG as appropriate).")
+						 "A zero or negative parameter value is added to the standard "
+						 "number of digits (FLT_DIG or DBL_DIG as appropriate). "
+						 "Any value greater than zero selects precise output mode.")
 		},
 		&extra_float_digits,
-		0, -15, 3,
+		1, -15, 3,
 		NULL, NULL, NULL
 	},
 
@@ -3384,7 +3399,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"archive_cleanup_command", PGC_POSTMASTER, WAL_ARCHIVE_RECOVERY,
+		{"archive_cleanup_command", PGC_SIGHUP, WAL_ARCHIVE_RECOVERY,
 			gettext_noop("Sets the shell command that will be executed at every restart point."),
 			NULL
 		},
@@ -3394,7 +3409,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"recovery_end_command", PGC_POSTMASTER, WAL_ARCHIVE_RECOVERY,
+		{"recovery_end_command", PGC_SIGHUP, WAL_ARCHIVE_RECOVERY,
 			gettext_noop("Sets the shell command that will be executed once at the end of recovery."),
 			NULL
 		},
@@ -3460,7 +3475,7 @@ static struct config_string ConfigureNamesString[] =
 	},
 
 	{
-		{"promote_trigger_file", PGC_POSTMASTER, REPLICATION_STANDBY,
+		{"promote_trigger_file", PGC_SIGHUP, REPLICATION_STANDBY,
 			gettext_noop("Specifies a file name whose presence ends recovery in the standby."),
 			NULL
 		},
@@ -4327,6 +4342,16 @@ static struct config_enum ConfigureNamesEnum[] =
 	},
 
 	{
+		{"shared_memory_type", PGC_POSTMASTER, RESOURCES_MEM,
+			gettext_noop("Selects the shared memory implementation used for the main shared memory region."),
+			NULL
+		},
+		&shared_memory_type,
+		DEFAULT_SHARED_MEMORY_TYPE, shared_memory_options,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"wal_sync_method", PGC_SIGHUP, WAL_SETTINGS,
 			gettext_noop("Selects the method used for forcing WAL updates to disk."),
 			NULL
@@ -4873,7 +4898,7 @@ add_placeholder_variable(const char *name, int elevel)
 
 	if (!add_guc_variable((struct config_generic *) var, elevel))
 	{
-		free((void *) gen->name);
+		free(unconstify(char *, gen->name));
 		free(var);
 		return NULL;
 	}
@@ -10887,7 +10912,7 @@ static bool
 check_maxconnections(int *newval, void **extra, GucSource source)
 {
 	if (*newval + autovacuum_max_workers + 1 +
-		max_worker_processes > MAX_BACKENDS)
+		max_worker_processes + max_wal_senders > MAX_BACKENDS)
 		return false;
 	return true;
 }
@@ -10895,7 +10920,17 @@ check_maxconnections(int *newval, void **extra, GucSource source)
 static bool
 check_autovacuum_max_workers(int *newval, void **extra, GucSource source)
 {
-	if (MaxConnections + *newval + 1 + max_worker_processes > MAX_BACKENDS)
+	if (MaxConnections + *newval + 1 +
+		max_worker_processes + max_wal_senders > MAX_BACKENDS)
+		return false;
+	return true;
+}
+
+static bool
+check_max_wal_senders(int *newval, void **extra, GucSource source)
+{
+	if (MaxConnections + autovacuum_max_workers + 1 +
+		max_worker_processes + *newval > MAX_BACKENDS)
 		return false;
 	return true;
 }
@@ -10926,7 +10961,8 @@ check_autovacuum_work_mem(int *newval, void **extra, GucSource source)
 static bool
 check_max_worker_processes(int *newval, void **extra, GucSource source)
 {
-	if (MaxConnections + autovacuum_max_workers + 1 + *newval > MAX_BACKENDS)
+	if (MaxConnections + autovacuum_max_workers + 1 +
+		*newval + max_wal_senders > MAX_BACKENDS)
 		return false;
 	return true;
 }

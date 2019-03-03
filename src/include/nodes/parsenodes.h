@@ -224,7 +224,7 @@ typedef struct TypeName
  * Currently, A_Star must appear only as the last list element --- the grammar
  * is responsible for enforcing this!
  *
- * Note: any array subscripting or selection of fields from composite columns
+ * Note: any container subscripting or selection of fields from composite columns
  * is represented by an A_Indirection node above the ColumnRef.  However,
  * for simplicity in the normal case, initial field selection from a table
  * name is represented within ColumnRef and not by adding A_Indirection.
@@ -950,7 +950,10 @@ typedef enum RTEKind
 	RTE_TABLEFUNC,				/* TableFunc(.., column list) */
 	RTE_VALUES,					/* VALUES (<exprlist>), (<exprlist>), ... */
 	RTE_CTE,					/* common table expr (WITH list element) */
-	RTE_NAMEDTUPLESTORE			/* tuplestore, e.g. for AFTER triggers */
+	RTE_NAMEDTUPLESTORE,		/* tuplestore, e.g. for AFTER triggers */
+	RTE_RESULT					/* RTE represents an empty FROM clause; such
+								 * RTEs are added by the planner, they're not
+								 * present during parsing or rewriting */
 } RTEKind;
 
 typedef struct RangeTblEntry
@@ -1399,11 +1402,19 @@ typedef struct OnConflictClause
  *
  * We don't currently support the SEARCH or CYCLE clause.
  */
+typedef enum CTEMaterialize
+{
+	CTEMaterializeDefault,		/* no option specified */
+	CTEMaterializeAlways,		/* MATERIALIZED */
+	CTEMaterializeNever			/* NOT MATERIALIZED */
+} CTEMaterialize;
+
 typedef struct CommonTableExpr
 {
 	NodeTag		type;
 	char	   *ctename;		/* query name (never qualified) */
 	List	   *aliascolnames;	/* optional list of column names */
+	CTEMaterialize ctematerialized; /* is this an optimization fence? */
 	/* SelectStmt/InsertStmt/etc before parse analysis, Query afterwards: */
 	Node	   *ctequery;		/* the CTE's subquery */
 	int			location;		/* token location, or -1 if unknown */
@@ -2422,8 +2433,7 @@ typedef struct AlterEventTrigStmt
 } AlterEventTrigStmt;
 
 /* ----------------------
- *		Create/Drop PROCEDURAL LANGUAGE Statements
- *		Create PROCEDURAL LANGUAGE Statements
+ *		Create LANGUAGE Statements
  * ----------------------
  */
 typedef struct CreatePLangStmt

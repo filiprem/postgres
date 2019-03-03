@@ -427,6 +427,11 @@ typedef struct ResultRelInfo
 	/* optional runtime measurements for triggers */
 	Instrumentation *ri_TrigInstrument;
 
+	/* On-demand created slots for triggers / returning processing */
+	TupleTableSlot *ri_ReturningSlot; /* for trigger output tuples */
+	TupleTableSlot *ri_TrigOldSlot; /* for a trigger's old tuple */
+	TupleTableSlot *ri_TrigNewSlot; /* for a trigger's new tuple */
+
 	/* FDW callback functions, if foreign table */
 	struct FdwRoutine *ri_FdwRoutine;
 
@@ -524,9 +529,6 @@ typedef struct EState
 
 	/* Stuff used for firing triggers: */
 	List	   *es_trig_target_relations;	/* trigger-only ResultRelInfos */
-	TupleTableSlot *es_trig_tuple_slot; /* for trigger output tuples */
-	TupleTableSlot *es_trig_oldtup_slot;	/* for TriggerEnabled */
-	TupleTableSlot *es_trig_newtup_slot;	/* for TriggerEnabled */
 
 	/* Parameter info: */
 	ParamListInfo es_param_list_info;	/* values of external params */
@@ -560,15 +562,15 @@ typedef struct EState
 
 	/*
 	 * These fields are for re-evaluating plan quals when an updated tuple is
-	 * substituted in READ COMMITTED mode.  es_epqTuple[] contains tuples that
-	 * scan plan nodes should return instead of whatever they'd normally
-	 * return, or NULL if nothing to return; es_epqTupleSet[] is true if a
-	 * particular array entry is valid; and es_epqScanDone[] is state to
-	 * remember if the tuple has been returned already.  Arrays are of size
-	 * es_range_table_size and are indexed by scan node scanrelid - 1.
+	 * substituted in READ COMMITTED mode.  es_epqTupleSlot[] contains test
+	 * tuples that scan plan nodes should return instead of whatever they'd
+	 * normally return, or an empty slot if there is nothing to return; if
+	 * es_epqTupleSlot[] is not NULL if a particular array entry is valid; and
+	 * es_epqScanDone[] is state to remember if the tuple has been returned
+	 * already.  Arrays are of size es_range_table_size and are indexed by
+	 * scan node scanrelid - 1.
 	 */
-	HeapTuple  *es_epqTuple;	/* array of EPQ substitute tuples */
-	bool	   *es_epqTupleSet; /* true if EPQ tuple is provided */
+	TupleTableSlot **es_epqTupleSlot;	/* array of EPQ substitute tuples */
 	bool	   *es_epqScanDone; /* true if EPQ tuple has been fetched */
 
 	bool		es_use_parallel_mode;	/* can we use parallel workers? */
@@ -826,7 +828,7 @@ typedef struct SetExprState
 	 * (by InitFunctionCallInfoData) if func.fn_oid is valid.  It also saves
 	 * argument values between calls, when setArgsValid is true.
 	 */
-	FunctionCallInfoData fcinfo_data;
+	FunctionCallInfo fcinfo;
 } SetExprState;
 
 /* ----------------
@@ -2255,8 +2257,6 @@ typedef struct LockRowsState
 	PlanState	ps;				/* its first field is NodeTag */
 	List	   *lr_arowMarks;	/* List of ExecAuxRowMarks */
 	EPQState	lr_epqstate;	/* for evaluating EvalPlanQual rechecks */
-	HeapTuple  *lr_curtuples;	/* locked tuples (one entry per RT entry) */
-	int			lr_ntables;		/* length of lr_curtuples[] array */
 } LockRowsState;
 
 /* ----------------

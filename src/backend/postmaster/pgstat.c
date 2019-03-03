@@ -1581,7 +1581,7 @@ pgstat_send_inquiry(TimestampTz clock_time, TimestampTz cutoff_time, Oid databas
  * Called by the executor before invoking a function.
  */
 void
-pgstat_init_function_usage(FunctionCallInfoData *fcinfo,
+pgstat_init_function_usage(FunctionCallInfo fcinfo,
 						   PgStat_FunctionCallUsage *fcu)
 {
 	PgStat_BackendFunctionEntry *htabent;
@@ -2906,7 +2906,9 @@ pgstat_bestart(void)
 		beentry->st_sslstatus->ssl_compression = be_tls_get_compression(MyProcPort);
 		strlcpy(beentry->st_sslstatus->ssl_version, be_tls_get_version(MyProcPort), NAMEDATALEN);
 		strlcpy(beentry->st_sslstatus->ssl_cipher, be_tls_get_cipher(MyProcPort), NAMEDATALEN);
-		be_tls_get_peerdn_name(MyProcPort, beentry->st_sslstatus->ssl_clientdn, NAMEDATALEN);
+		be_tls_get_peer_subject_name(MyProcPort, beentry->st_sslstatus->ssl_client_dn, NAMEDATALEN);
+		be_tls_get_peer_serial(MyProcPort, beentry->st_sslstatus->ssl_client_serial, NAMEDATALEN);
+		be_tls_get_peer_issuer_name(MyProcPort, beentry->st_sslstatus->ssl_issuer_dn, NAMEDATALEN);
 	}
 	else
 	{

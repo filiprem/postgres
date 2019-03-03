@@ -47,7 +47,6 @@ typedef struct PartitionKeyData
 }			PartitionKeyData;
 
 extern void RelationBuildPartitionKey(Relation relation);
-extern void RelationBuildPartitionDesc(Relation rel);
 extern List *RelationGetPartitionQual(Relation rel);
 extern Expr *get_partition_qual_relid(Oid relid);
 
@@ -91,6 +90,12 @@ static inline int32
 get_partition_col_typmod(PartitionKey key, int col)
 {
 	return key->parttypmod[col];
+}
+
+static inline Oid
+get_partition_col_collation(PartitionKey key, int col)
+{
+	return key->partcollation[col];
 }
 
 #endif							/* PARTCACHE_H */
