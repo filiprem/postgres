@@ -78,8 +78,6 @@ typedef struct
 #define LQUERY_HDRSIZE	 MAXALIGN( offsetof(lquery, data) )
 #define LQUERY_FIRST(x)   ( (lquery_level*)( ((char*)(x))+LQUERY_HDRSIZE ) )
 
-#define LQUERY_HASNOT		0x01
-
 #define ISALNUM(x)	( t_isalpha(x) || t_isdigit(x)	|| ( pg_mblen(x) == 1 && t_iseq((x), '_') ) )
 
 /* full text query */

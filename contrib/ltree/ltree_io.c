@@ -205,7 +205,6 @@ lquery_in(PG_FUNCTION_ARGS)
 			   *curqlevel,
 			   *tmpql;
 	lquery_variant *lrptr = NULL;
-	bool		hasnot = false;
 	bool		wasbad = false;
 	int			charlen;
 	int			pos = 0;
@@ -254,7 +253,6 @@ lquery_in(PG_FUNCTION_ARGS)
 				state = LQPRS_WAITDELIM;
 				curqlevel->numvar = 1;
 				curqlevel->flag |= LQL_NOT;
-				hasnot = true;
 			}
 			else if (charlen == 1 && t_iseq(ptr, '*'))
 				state = LQPRS_WAITOPEN;
@@ -480,8 +478,6 @@ lquery_in(PG_FUNCTION_ARGS)
 	result->numlevel = num;
 	result->firstgood = 0;
 	result->flag = 0;
-	if (hasnot)
-		result->flag |= LQUERY_HASNOT;
 	cur = LQUERY_FIRST(result);
 	curqlevel = tmpql;
 	while ((char *) curqlevel - (char *) tmpql < num * ITEMSIZE)
