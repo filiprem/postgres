@@ -168,7 +168,8 @@ SELECT 'a.b.c.d.e'::ltree ~ 'a.!b.*{1}.!c.*';
 SELECT 'a.b.c.d.e'::ltree ~ '!b.*{1}.!c.*';
 SELECT 'a.b.c.d.e'::ltree ~ '*.!b.*{1}.!c.*';
 SELECT 'a.b.c.d.e'::ltree ~ '*.!b.*.!c.*';
-
+SELECT '5.0.1.0'::ltree ~ '5.!0.!0.0';
+SELECT 'a.b'::ltree ~ '!a.!a';
 
 SELECT 'QWER_TY'::ltree ~ 'q%@*';
 SELECT 'QWER_TY'::ltree ~ 'Q_t%@*';

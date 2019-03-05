@@ -598,7 +598,7 @@ ltreetest=&gt; SELECT path FROM test WHERE path ~ '*.Astronomy.*';
  Top.Collections.Pictures.Astronomy.Astronauts
 (7 rows)
 
-ltreetest=&gt; SELECT path FROM test WHERE path ~ '*.!pictures@.*.Astronomy.*';
+ltreetest=&gt; SELECT path FROM test WHERE path ~ '*.!pictures@.Astronomy.*';
                 path
 ------------------------------------
  Top.Science.Astronomy
