@@ -21,7 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable class="parameter">payload</replaceable> ]
+NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable class="parameter">payload</replaceable> [ , <replaceable class="parameter">collapse_mode</replaceable> ] ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -47,10 +47,10 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
   </para>
 
   <para>
-   The information passed to the client for a notification event includes the
-   notification channel
-   name, the notifying session's server process <acronym>PID</acronym>, and the
-   payload string, which is an empty string if it has not been specified.
+   The information passed to the client for a notification event includes
+   the notification channel name, the notifying session's server process
+   <acronym>PID</acronym>, and the payload string, which is an empty string
+   if it has not been specified.
   </para>
 
   <para>
@@ -94,20 +94,6 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
   </para>
 
   <para>
-   If the same channel name is signaled multiple times from the same
-   transaction with identical payload strings, the
-   database server can decide to deliver a single notification only.
-   On the other hand, notifications with distinct payload strings will
-   always be delivered as distinct notifications. Similarly, notifications from
-   different transactions will never get folded into one notification.
-   Except for dropping later instances of duplicate notifications,
-   <command>NOTIFY</command> guarantees that notifications from the same
-   transaction get delivered in the order they were sent.  It is also
-   guaranteed that messages from different transactions are delivered in
-   the order in which the transactions committed.
-  </para>
-
-  <para>
    It is common for a client that executes <command>NOTIFY</command>
    to be listening on the same notification channel itself.  In that case
    it will get back a notification event, just like all the other
@@ -144,6 +130,28 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
       In the default configuration it must be shorter than 8000 bytes.
       (If binary data or large amounts of information need to be communicated,
       it's best to put it in a database table and send the key of the record.)
+     </para>
+    </listitem>
+   </varlistentry>
+   <varlistentry>
+    <term><replaceable class="parameter">collapse_mode</replaceable></term>
+    <listitem>
+     <para>
+      Controls collapsing of repeated messages. Can be either
+      <literal>on</literal> (the default) or <literal>off</literal>.
+
+      When <literal>on</literal>, if the same channel is signaled multiple
+      times with identical payload from the same transaction block (finished
+      with <literal>COMMIT</>, <literal>END</> or <literal>SAVEPOINT</>), the
+      database server will deliver a single notification only.
+
+      When <literal>off</literal>, duplicates will not be collapsed.
+
+      Except for dropping later instances of duplicate notifications,
+      <command>NOTIFY</command> guarantees that notifications from the same
+      transaction get delivered in the order they were sent.  It is also
+      guaranteed that messages from different transactions are delivered
+      in the order in which the transactions committed.
      </para>
     </listitem>
    </varlistentry>
@@ -190,6 +198,12 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
     to use than the <command>NOTIFY</command> command if you need to work with
     non-constant channel names and payloads.
    </para>
+   <para>
+    There is a three-argument version, <literal>pg_notify(<type>text</>,
+    <type>text</>, <type>text</>)</literal>. The third argument corresponds
+    to the <replaceable class="parameter">collapse_mode</replaceable> parameter
+    of the <literal>NOTIFY</literal> command. 
+   </para>
   </refsect2>
  </refsect1>
 
@@ -210,6 +224,22 @@ Asynchronous notification "virtual" with payload "This is the payload" received 
 LISTEN foo;
 SELECT pg_notify('fo' || 'o', 'pay' || 'load');
 Asynchronous notification "foo" with payload "payload" received from server process with PID 14728.
+
+/* Identical messages from same (sub-) transaction will be eliminated,
+   unless you use collapse_mode = off */
+LISTEN bar;
+BEGIN;
+NOTIFY bar, 'Coffee please';
+NOTIFY bar, 'Coffee please';
+NOTIFY bar, 'Milk please';
+NOTIFY bar, 'Milk please', 'off';
+SAVEPOINT s;
+NOTIFY bar, 'Coffee please';
+COMMIT;
+Asynchronous notification "bar" with payload "Coffee please" received from server process with PID 31517.
+Asynchronous notification "bar" with payload "Milk please" received from server process with PID 31517.
+Asynchronous notification "bar" with payload "Milk please" received from server process with PID 31517.
+Asynchronous notification "bar" with payload "Coffee please" received from server process with PID 31517.
 </programlisting></para>
  </refsect1>
 

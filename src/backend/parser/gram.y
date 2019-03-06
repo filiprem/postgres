@@ -522,6 +522,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <ival>	Iconst SignedIconst
 %type <str>		Sconst comment_text notify_payload
+%type <boolean> notify_collapse_mode
 %type <str>		RoleId opt_boolean_or_string
 %type <list>	var_list
 %type <str>		ColId ColLabel var_name type_function_name param_name
@@ -9717,16 +9718,22 @@ opt_instead:
  *
  *****************************************************************************/
 
-NotifyStmt: NOTIFY ColId notify_payload
+NotifyStmt: NOTIFY ColId notify_payload notify_collapse_mode
 				{
 					NotifyStmt *n = makeNode(NotifyStmt);
 					n->conditionname = $2;
 					n->payload = $3;
+					n->collapse_mode = $4;
 					$$ = (Node *)n;
 				}
 		;
 
 notify_payload:
+			',' Sconst							{ $$ = $2; }
+			| /*EMPTY*/							{ $$ = NULL; }
+		;
+
+notify_collapse_mode:
 			',' Sconst							{ $$ = $2; }
 			| /*EMPTY*/							{ $$ = NULL; }
 		;

@@ -2658,8 +2658,9 @@ _outNotifyStmt(StringInfo str, const NotifyStmt *node)
 {
 	WRITE_NODE_TYPE("NOTIFY");
 
-	WRITE_STRING_FIELD(conditionname);
+	WRITE_STRING_FIELD(channel);
 	WRITE_STRING_FIELD(payload);
+	WRITE_BOOL_FIELD(collapse_mode);
 }
 
 static void

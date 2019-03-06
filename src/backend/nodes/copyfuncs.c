@@ -3620,8 +3620,9 @@ _copyNotifyStmt(const NotifyStmt *from)
 {
 	NotifyStmt *newnode = makeNode(NotifyStmt);
 
-	COPY_STRING_FIELD(conditionname);
+	COPY_STRING_FIELD(channel);
 	COPY_STRING_FIELD(payload);
+	COPY_SCALAR_FIELD(collapse_mode);
 
 	return newnode;
 }
@@ -3631,7 +3632,7 @@ _copyListenStmt(const ListenStmt *from)
 {
 	ListenStmt *newnode = makeNode(ListenStmt);
 
-	COPY_STRING_FIELD(conditionname);
+	COPY_STRING_FIELD(channel);
 
 	return newnode;
 }
@@ -3641,7 +3642,7 @@ _copyUnlistenStmt(const UnlistenStmt *from)
 {
 	UnlistenStmt *newnode = makeNode(UnlistenStmt);
 
-	COPY_STRING_FIELD(conditionname);
+	COPY_STRING_FIELD(channel);
 
 	return newnode;
 }

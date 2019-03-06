@@ -296,8 +296,9 @@ _readNotifyStmt(void)
 {
 	READ_LOCALS(NotifyStmt);
 
-	READ_STRING_FIELD(conditionname);
+	READ_STRING_FIELD(channel);
 	READ_STRING_FIELD(payload);
+	READ_BOOL_FIELD(collapse_mode);
 
 	READ_DONE();
 }

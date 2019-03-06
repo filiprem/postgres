@@ -2947,8 +2947,9 @@ typedef struct RuleStmt
 typedef struct NotifyStmt
 {
 	NodeTag		type;
-	char	   *conditionname;	/* condition name to notify */
+	char	   *channel;		/* channel name to notify */
 	char	   *payload;		/* the payload string, or NULL if none */
+	bool	   collapse_mode;	/* Collapse mode (deduplication) */
 } NotifyStmt;
 
 /* ----------------------
@@ -2958,7 +2959,7 @@ typedef struct NotifyStmt
 typedef struct ListenStmt
 {
 	NodeTag		type;
-	char	   *conditionname;	/* condition name to listen on */
+	char	   *channel;		/* channel name to listen on */
 } ListenStmt;
 
 /* ----------------------
@@ -2968,7 +2969,7 @@ typedef struct ListenStmt
 typedef struct UnlistenStmt
 {
 	NodeTag		type;
-	char	   *conditionname;	/* name to unlisten on, or NULL for all */
+	char	   *channel;		/* channel name to unlisten, or NULL for all */
 } UnlistenStmt;
 
 /* ----------------------

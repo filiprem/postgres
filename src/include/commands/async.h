@@ -33,7 +33,7 @@ extern void NotifyMyFrontEnd(const char *channel,
 				 int32 srcPid);
 
 /* notify-related SQL statements */
-extern void Async_Notify(const char *channel, const char *payload);
+extern void Async_Notify(const char *channel, const char *payload, bool collapse_mode);
 extern void Async_Listen(const char *channel);
 extern void Async_Unlisten(const char *channel);
 extern void Async_UnlistenAll(void);

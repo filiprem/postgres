@@ -49,12 +49,14 @@
  * 4. The NOTIFY statement (routine Async_Notify) stores the notification in
  *	  a backend-local list which will not be processed until transaction end.
  *
- *	  Duplicate notifications from the same transaction are sent out as one
- *	  notification only. This is done to save work when for example a trigger
- *	  on a 2 million row table fires a notification for each row that has been
- *	  changed. If the application needs to receive every single notification
- *	  that has been sent, it can easily add some unique string into the extra
- *	  payload parameter.
+ *	  In the default collapse_mode ('on'), duplicate notifications from the
+ *	  same transaction are sent out as one notification only. This is done to
+ *	  save work when for example a trigger on a 2 million row table fires a
+ *	  notification for each row that has been changed. If the application needs
+ *	  to receive every single notification that has been sent, it can easily
+ *	  add some unique string into the extra payload parameter. 
+ *	  
+ *	  If collapse_mode is 'off', de-duplication is skipped altogether.
  *
  *	  When the transaction is ready to commit, PreCommit_Notify() adds the
  *	  pending notifications to the head of the queue. The head pointer of the
@@ -523,7 +525,42 @@ pg_notify(PG_FUNCTION_ARGS)
 	/* For NOTIFY as a statement, this is checked in ProcessUtility */
 	PreventCommandDuringRecovery("NOTIFY");
 
-	Async_Notify(channel, payload);
+	Async_Notify(channel, payload, true);
+
+	PG_RETURN_VOID();
+}
+
+
+/*
+ * pg_notify_3args
+ *    SQL function to send a notification event, 3-argument version
+ */
+Datum
+pg_notify_3args(PG_FUNCTION_ARGS)
+{
+	const char *channel;
+	const char *payload;
+	bool collapse_mode;
+
+	if (PG_ARGISNULL(0))
+		channel = "";
+	else
+		channel = text_to_cstring(PG_GETARG_TEXT_PP(0));
+
+	if (PG_ARGISNULL(1))
+		payload = "";
+	else
+		payload = text_to_cstring(PG_GETARG_TEXT_PP(1));
+
+	if (PG_ARGISNULL(2))
+		collapse_mode = true;
+	else
+		collapse_mode = PG_GETARG_BOOL(2);
+
+	/* For NOTIFY as a statement, this is checked in ProcessUtility */
+	PreventCommandDuringRecovery("NOTIFY");
+
+	Async_Notify(channel, payload, collapse_mode);
 
 	PG_RETURN_VOID();
 }
@@ -539,7 +576,7 @@ pg_notify(PG_FUNCTION_ARGS)
  *		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
  */
 void
-Async_Notify(const char *channel, const char *payload)
+Async_Notify(const char *channel, const char *payload, bool collapse_mode)
 {
 	Notification *n;
 	MemoryContext oldcontext;
@@ -569,9 +606,10 @@ Async_Notify(const char *channel, const char *payload)
 					 errmsg("payload string too long")));
 	}
 
-	/* no point in making duplicate entries in the list ... */
-	if (AsyncExistsPendingNotify(channel, payload))
-		return;
+	if (collapse_mode)
+		/* remove duplicate entries in the list */
+		if (AsyncExistsPendingNotify(channel, payload))
+			return;
 
 	/*
 	 * The notification list needs to live until end of transaction, so store

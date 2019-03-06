@@ -611,7 +611,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 				NotifyStmt *stmt = (NotifyStmt *) parsetree;
 
 				PreventCommandDuringRecovery("NOTIFY");
-				Async_Notify(stmt->conditionname, stmt->payload);
+				Async_Notify(stmt->channel, stmt->payload, stmt->collapse_mode);
 			}
 			break;
 
@@ -621,7 +621,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				PreventCommandDuringRecovery("LISTEN");
 				CheckRestrictedOperation("LISTEN");
-				Async_Listen(stmt->conditionname);
+				Async_Listen(stmt->channel);
 			}
 			break;
 
@@ -631,8 +631,8 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				/* we allow UNLISTEN during recovery, as it's a noop */
 				CheckRestrictedOperation("UNLISTEN");
-				if (stmt->conditionname)
-					Async_Unlisten(stmt->conditionname);
+				if (stmt->channel)
+					Async_Unlisten(stmt->channel);
 				else
 					Async_UnlistenAll();
 			}
