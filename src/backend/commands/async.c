@@ -532,11 +532,11 @@ pg_notify(PG_FUNCTION_ARGS)
 
 
 /*
- * pg_notify_3args
+ * pg_notify_mode
  *    SQL function to send a notification event, 3-argument version
  */
 Datum
-pg_notify_3args(PG_FUNCTION_ARGS)
+pg_notify_mode(PG_FUNCTION_ARGS)
 {
 	const char *channel;
 	const char *payload;

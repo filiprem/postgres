@@ -6586,8 +6586,7 @@ get_utility_query_def(Query *query, deparse_context *context)
 		{
 			appendStringInfoString(buf, ", ");
 			simple_quote_literal(buf, stmt->payload);
-			appendStringInfoString(buf, ", ");
-			simple_quote_literal(buf, stmt->collapse_mode);
+			appendStringInfo(buf, ", %s", (stmt->collapse_mode ? "true" : "false"));
 		}
 	}
 	else

@@ -9718,30 +9718,45 @@ opt_instead:
  *
  *****************************************************************************/
 
-NotifyStmt: NOTIFY ColId notify_payload notify_collapse_mode
-				{
-					NotifyStmt *n = makeNode(NotifyStmt);
-					n->conditionname = $2;
-					n->payload = $3;
-					n->collapse_mode = $4;
-					$$ = (Node *)n;
-				}
+NotifyStmt:
+		NOTIFY ColId
+		{
+			NotifyStmt *n = makeNode(NotifyStmt);
+			n->channel = $2;
+			n->payload = NULL;
+			n->collapse_mode = NULL;
+			$$ = (Node *)n;
+		}
+		| NOTIFY ColId notify_payload
+		{
+			NotifyStmt *n = makeNode(NotifyStmt);
+			n->channel = $2;
+			n->payload = $3;
+			n->collapse_mode = NULL;
+			$$ = (Node *)n;
+		}
+		| NOTIFY ColId notify_payload notify_collapse_mode
+		{
+			NotifyStmt *n = makeNode(NotifyStmt);
+			n->channel = $2;
+			n->payload = $3;
+			n->collapse_mode = $4;
+			$$ = (Node *)n;
+		}
 		;
 
 notify_payload:
 			',' Sconst							{ $$ = $2; }
-			| /*EMPTY*/							{ $$ = NULL; }
 		;
 
 notify_collapse_mode:
 			',' Sconst							{ $$ = $2; }
-			| /*EMPTY*/							{ $$ = NULL; }
 		;
 
 ListenStmt: LISTEN ColId
 				{
 					ListenStmt *n = makeNode(ListenStmt);
-					n->conditionname = $2;
+					n->channel = $2;
 					$$ = (Node *)n;
 				}
 		;
@@ -9750,13 +9765,13 @@ UnlistenStmt:
 			UNLISTEN ColId
 				{
 					UnlistenStmt *n = makeNode(UnlistenStmt);
-					n->conditionname = $2;
+					n->channel = $2;
 					$$ = (Node *)n;
 				}
 			| UNLISTEN '*'
 				{
 					UnlistenStmt *n = makeNode(UnlistenStmt);
-					n->conditionname = NULL;
+					n->channel = NULL;
 					$$ = (Node *)n;
 				}
 		;
