@@ -8,13 +8,25 @@ SELECT pg_notify('notify_async1','sample message1');
  
 (1 row)
 
+SELECT pg_notify('notify_async1','sample_message1',true);
+ pg_notify 
+-----------
+ 
+(1 row)
+
 SELECT pg_notify('notify_async1','sample message1',false);
  pg_notify 
 -----------
  
 (1 row)
 
-SELECT pg_notify('notify_async1','sample_message1',true);
+SELECT pg_notify('notify_async1','sample_message1','on');
+ pg_notify 
+-----------
+ 
+(1 row)
+
+SELECT pg_notify('notify_async1','sample_message1','off');
  pg_notify 
 -----------
  
@@ -42,6 +54,8 @@ ERROR:  channel name too long
 --Should work. Valid NOTIFY/LISTEN/UNLISTEN commands
 NOTIFY notify_async2;
 NOTIFY notify_async2, '';
+NOTIFY notify_async2, '', true;
+NOTIFY notify_async2, '', false;
 NOTIFY notify_async2, '', 'on';
 NOTIFY notify_async2, '', 'off';
 LISTEN notify_async2;

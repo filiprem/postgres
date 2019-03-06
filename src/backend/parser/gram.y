@@ -9750,7 +9750,7 @@ notify_payload:
 		;
 
 notify_collapse_mode:
-			',' Sconst							{ $$ = $2; }
+			',' opt_boolean_or_string 			{ $$ = $2; }
 		;
 
 ListenStmt: LISTEN ColId

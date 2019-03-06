@@ -4,8 +4,10 @@
 
 --Should work. Send a valid message via a valid channel name
 SELECT pg_notify('notify_async1','sample message1');
-SELECT pg_notify('notify_async1','sample message1',false);
 SELECT pg_notify('notify_async1','sample_message1',true);
+SELECT pg_notify('notify_async1','sample message1',false);
+SELECT pg_notify('notify_async1','sample_message1','on');
+SELECT pg_notify('notify_async1','sample_message1','off');
 SELECT pg_notify('notify_async1','');
 SELECT pg_notify('notify_async1',NULL);
 
@@ -17,6 +19,8 @@ SELECT pg_notify('notify_async_channel_name_too_long____________________________
 --Should work. Valid NOTIFY/LISTEN/UNLISTEN commands
 NOTIFY notify_async2;
 NOTIFY notify_async2, '';
+NOTIFY notify_async2, '', true;
+NOTIFY notify_async2, '', false;
 NOTIFY notify_async2, '', 'on';
 NOTIFY notify_async2, '', 'off';
 LISTEN notify_async2;

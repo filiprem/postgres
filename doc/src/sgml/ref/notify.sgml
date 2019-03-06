@@ -142,8 +142,9 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
 
       When <literal>on</literal>, if the same channel is signaled multiple
       times with identical payload from the same transaction block (finished
-      with <literal>COMMIT</>, <literal>END</> or <literal>SAVEPOINT</>), the
-      database server will deliver a single notification only.
+	  with <literal>COMMIT</literal>, <literal>END</literal> or
+	  <literal>SAVEPOINT</literal>), the database server will deliver a single
+	  notification only.
 
       When <literal>off</literal>, duplicates will not be collapsed.
 
@@ -199,10 +200,12 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
     non-constant channel names and payloads.
    </para>
    <para>
-    There is a three-argument version, <literal>pg_notify(<type>text</>,
-    <type>text</>, <type>text</>)</literal>. The third argument corresponds
-    to the <replaceable class="parameter">collapse_mode</replaceable> parameter
-    of the <literal>NOTIFY</literal> command. 
+	There is a three-argument version,
+	<literal><function>pg_notify</function>(<type>text</type>,
+	<type>text</type>, <type>boolean</type>)</literal>. The third argument
+	corresponds to the <replaceable
+	class="parameter">collapse_mode</replaceable> parameter of the
+	<literal>NOTIFY</literal> command. 
    </para>
   </refsect2>
  </refsect1>
