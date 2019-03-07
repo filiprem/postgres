@@ -1324,6 +1324,7 @@ _copyIntoClause(const IntoClause *from)
 
 	COPY_NODE_FIELD(rel);
 	COPY_NODE_FIELD(colNames);
+	COPY_STRING_FIELD(accessMethod);
 	COPY_NODE_FIELD(options);
 	COPY_SCALAR_FIELD(onCommit);
 	COPY_STRING_FIELD(tableSpaceName);
@@ -3334,6 +3335,7 @@ CopyCreateStmtFields(const CreateStmt *from, CreateStmt *newnode)
 	COPY_NODE_FIELD(options);
 	COPY_SCALAR_FIELD(oncommit);
 	COPY_STRING_FIELD(tablespacename);
+	COPY_STRING_FIELD(accessMethod);
 	COPY_SCALAR_FIELD(if_not_exists);
 }
 
