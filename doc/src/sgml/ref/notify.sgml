@@ -21,7 +21,7 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable class="parameter">payload</replaceable> [ , <replaceable class="parameter">collapse_mode</replaceable> ] ]
+NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable class="parameter">payload</replaceable> [ , <replaceable class="parameter">send_mode</replaceable> ] ]
 </synopsis>
  </refsynopsisdiv>
 
@@ -92,7 +92,13 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
    is that applications using <command>NOTIFY</command> for real-time signaling
    should try to keep their transactions short.
   </para>
-
+  <para>
+   Except for dropping later instances of duplicate notifications,
+   <command>NOTIFY</command> guarantees that notifications from the same
+   transaction get delivered in the order they were sent.  It is also
+   guaranteed that messages from different transactions are delivered
+   in the order in which the transactions committed.
+  </para>
   <para>
    It is common for a client that executes <command>NOTIFY</command>
    to be listening on the same notification channel itself.  In that case
@@ -134,25 +140,19 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
     </listitem>
    </varlistentry>
    <varlistentry>
-    <term><replaceable class="parameter">collapse_mode</replaceable></term>
+    <term><replaceable class="parameter">send_mode</replaceable></term>
     <listitem>
      <para>
       Controls collapsing of repeated messages. Can be either
-      <literal>on</literal> (the default) or <literal>off</literal>.
+      <literal>'unique'</literal> (the default) or <literal>'all'</literal>.
 
-      When <literal>on</literal>, if the same channel is signaled multiple
-      times with identical payload from the same transaction block (finished
-	  with <literal>COMMIT</literal>, <literal>END</literal> or
-	  <literal>SAVEPOINT</literal>), the database server will deliver a single
-	  notification only.
+      When set to <literal>'unique'</literal>, notification will be skipped if
+      the same channel was already signaled with identical payload in the same
+      transaction block (finished with <literal>COMMIT</literal>,
+      <literal>END</literal> or <literal>SAVEPOINT</literal>).
+      
+      When set to <literal>'all'</literal>, duplicates will not be collapsed.
 
-      When <literal>off</literal>, duplicates will not be collapsed.
-
-      Except for dropping later instances of duplicate notifications,
-      <command>NOTIFY</command> guarantees that notifications from the same
-      transaction get delivered in the order they were sent.  It is also
-      guaranteed that messages from different transactions are delivered
-      in the order in which the transactions committed.
      </para>
     </listitem>
    </varlistentry>
@@ -200,12 +200,12 @@ NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable cla
     non-constant channel names and payloads.
    </para>
    <para>
-	There is a three-argument version,
-	<literal><function>pg_notify</function>(<type>text</type>,
-	<type>text</type>, <type>boolean</type>)</literal>. The third argument
-	corresponds to the <replaceable
-	class="parameter">collapse_mode</replaceable> parameter of the
-	<literal>NOTIFY</literal> command. 
+    There is a three-argument version,
+    <literal><function>pg_notify</function>(<type>text</type>,
+    <type>text</type>, <type>text</type>)</literal>. The third argument
+    corresponds to the <replaceable
+    class="parameter">send_mode</replaceable> parameter of the
+    <literal>NOTIFY</literal> command. 
    </para>
   </refsect2>
  </refsect1>
@@ -229,7 +229,7 @@ SELECT pg_notify('fo' || 'o', 'pay' || 'load');
 Asynchronous notification "foo" with payload "payload" received from server process with PID 14728.
 
 /* Identical messages from same (sub-) transaction will be eliminated,
-   unless you use collapse_mode = off */
+   unless you use send_mode = 'all' */
 LISTEN bar;
 BEGIN;
 NOTIFY bar, 'Coffee please';

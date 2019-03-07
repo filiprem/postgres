@@ -8,25 +8,13 @@ SELECT pg_notify('notify_async1','sample message1');
  
 (1 row)
 
-SELECT pg_notify('notify_async1','sample_message1',true);
+SELECT pg_notify('notify_async1','sample_message1','unique');
  pg_notify 
 -----------
  
 (1 row)
 
-SELECT pg_notify('notify_async1','sample message1',false);
- pg_notify 
------------
- 
-(1 row)
-
-SELECT pg_notify('notify_async1','sample_message1','on');
- pg_notify 
------------
- 
-(1 row)
-
-SELECT pg_notify('notify_async1','sample_message1','off');
+SELECT pg_notify('notify_async1','sample_message1','all');
  pg_notify 
 -----------
  
@@ -51,13 +39,16 @@ SELECT pg_notify(NULL,'sample message1');
 ERROR:  channel name cannot be empty
 SELECT pg_notify('notify_async_channel_name_too_long______________________________','sample_message1');
 ERROR:  channel name too long
+-- Should fail. Invalid 3rd parameter
+NOTIFY notify_async2, 'test', 'invalid';
+ERROR:  ?
+NOTIFY notify_async2, 'test', true;
+ERROR:  ?
 --Should work. Valid NOTIFY/LISTEN/UNLISTEN commands
 NOTIFY notify_async2;
 NOTIFY notify_async2, '';
-NOTIFY notify_async2, '', true;
-NOTIFY notify_async2, '', false;
-NOTIFY notify_async2, '', 'on';
-NOTIFY notify_async2, '', 'off';
+NOTIFY notify_async2, '', 'unique';
+NOTIFY notify_async2, '', 'all';
 LISTEN notify_async2;
 UNLISTEN notify_async2;
 UNLISTEN *;

@@ -298,7 +298,7 @@ _readNotifyStmt(void)
 
 	READ_STRING_FIELD(channel);
 	READ_STRING_FIELD(payload);
-	READ_BOOL_FIELD(collapse_mode);
+	READ_ENUM_FIELD(send_mode, NotifySendMode);
 
 	READ_DONE();
 }

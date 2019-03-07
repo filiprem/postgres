@@ -1480,7 +1480,7 @@ _equalNotifyStmt(const NotifyStmt *a, const NotifyStmt *b)
 {
 	COMPARE_STRING_FIELD(channel);
 	COMPARE_STRING_FIELD(payload);
-	COMPARE_SCALAR_FIELD(collapse_mode);
+	COMPARE_SCALAR_FIELD(send_mode);
 
 	return true;
 }

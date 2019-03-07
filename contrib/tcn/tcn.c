@@ -161,7 +161,7 @@ triggered_change_notification(PG_FUNCTION_ARGS)
 					strcpy_quoted(payload, SPI_getvalue(trigtuple, tupdesc, colno), '\'');
 				}
 
-				Async_Notify(channel, payload->data, true);
+				Async_Notify(channel, payload->data, NOTIFY_SEND_UNIQUE);
 			}
 			ReleaseSysCache(indexTuple);
 			break;

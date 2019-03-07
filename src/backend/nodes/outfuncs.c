@@ -2662,7 +2662,7 @@ _outNotifyStmt(StringInfo str, const NotifyStmt *node)
 
 	WRITE_STRING_FIELD(channel);
 	WRITE_STRING_FIELD(payload);
-	WRITE_BOOL_FIELD(collapse_mode);
+	WRITE_ENUM_FIELD(send_mode, NotifySendMode);
 }
 
 static void

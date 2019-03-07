@@ -27,6 +27,7 @@
 #include "nodes/primnodes.h"
 #include "nodes/value.h"
 #include "partitioning/partdefs.h"
+#include "commands/async.h"
 
 
 typedef enum OverridingKind
@@ -2944,13 +2945,19 @@ typedef struct RuleStmt
 /* ----------------------
  *		Notify Statement
  * ----------------------
+typedef enum NotifySendMode
+{
+   NOTIFY_SEND_UNIQUE,
+   NOTIFY_SEND_ALL
+} NotifySendMode;
  */
+
 typedef struct NotifyStmt
 {
-	NodeTag		type;
-	char	   *channel;		/* channel name to notify */
-	char	   *payload;		/* the payload string, or NULL if none */
-	bool	   collapse_mode;	/* Collapse mode (deduplication) */
+	NodeTag			type;
+	char			*channel;	/* channel name to notify */
+	char			*payload;	/* the payload string, or NULL if none */
+	NotifySendMode	send_mode;	/* Send mode */
 } NotifyStmt;
 
 /* ----------------------
