@@ -14,7 +14,7 @@
  * hard postmaster crash, remaining segments will be removed, if they
  * still exist, at the next postmaster startup.
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -429,7 +429,7 @@ dsm_set_control_handle(dsm_handle h)
  * If there is a non-NULL CurrentResourceOwner, the new segment is associated
  * with it and must be detached before the resource owner releases, or a
  * warning will be logged.  If CurrentResourceOwner is NULL, the segment
- * remains attached until explicitely detached or the session ends.
+ * remains attached until explicitly detached or the session ends.
  * Creating with a NULL CurrentResourceOwner is equivalent to creating
  * with a non-NULL CurrentResourceOwner and then calling dsm_pin_mapping.
  */
@@ -527,7 +527,7 @@ dsm_create(Size size, int flags)
  * If there is a non-NULL CurrentResourceOwner, the attached segment is
  * associated with it and must be detached before the resource owner releases,
  * or a warning will be logged.  Otherwise the segment remains attached until
- * explicitely detached or the session ends.  See the note atop dsm_create().
+ * explicitly detached or the session ends.  See the note atop dsm_create().
  */
 dsm_segment *
 dsm_attach(dsm_handle h)
@@ -569,21 +569,19 @@ dsm_attach(dsm_handle h)
 	nitems = dsm_control->nitems;
 	for (i = 0; i < nitems; ++i)
 	{
-		/* If the reference count is 0, the slot is actually unused. */
-		if (dsm_control->item[i].refcnt == 0)
+		/*
+		 * If the reference count is 0, the slot is actually unused.  If the
+		 * reference count is 1, the slot is still in use, but the segment is
+		 * in the process of going away; even if the handle matches, another
+		 * slot may already have started using the same handle value by
+		 * coincidence so we have to keep searching.
+		 */
+		if (dsm_control->item[i].refcnt <= 1)
 			continue;
 
 		/* If the handle doesn't match, it's not the slot we want. */
 		if (dsm_control->item[i].handle != seg->handle)
 			continue;
-
-		/*
-		 * If the reference count is 1, the slot is still in use, but the
-		 * segment is in the process of going away.  Treat that as if we
-		 * didn't find a match.
-		 */
-		if (dsm_control->item[i].refcnt == 1)
-			break;
 
 		/* Otherwise we've found a match. */
 		dsm_control->item[i].refcnt++;
@@ -651,38 +649,6 @@ dsm_detach_all(void)
 		dsm_impl_op(DSM_OP_DETACH, dsm_control_handle, 0,
 					&dsm_control_impl_private, &control_address,
 					&dsm_control_mapped_size, ERROR);
-}
-
-/*
- * Resize an existing shared memory segment.
- *
- * This may cause the shared memory segment to be remapped at a different
- * address.  For the caller's convenience, we return the mapped address.
- */
-void *
-dsm_resize(dsm_segment *seg, Size size)
-{
-	Assert(seg->control_slot != INVALID_CONTROL_SLOT);
-	dsm_impl_op(DSM_OP_RESIZE, seg->handle, size, &seg->impl_private,
-				&seg->mapped_address, &seg->mapped_size, ERROR);
-	return seg->mapped_address;
-}
-
-/*
- * Remap an existing shared memory segment.
- *
- * This is intended to be used when some other process has extended the
- * mapping using dsm_resize(), but we've still only got the initial
- * portion mapped.  Since this might change the address at which the
- * segment is mapped, we return the new mapped address.
- */
-void *
-dsm_remap(dsm_segment *seg)
-{
-	dsm_impl_op(DSM_OP_ATTACH, seg->handle, 0, &seg->impl_private,
-				&seg->mapped_address, &seg->mapped_size, ERROR);
-
-	return seg->mapped_address;
 }
 
 /*
@@ -878,8 +844,8 @@ dsm_unpin_segment(dsm_handle handle)
 	LWLockAcquire(DynamicSharedMemoryControlLock, LW_EXCLUSIVE);
 	for (i = 0; i < dsm_control->nitems; ++i)
 	{
-		/* Skip unused slots. */
-		if (dsm_control->item[i].refcnt == 0)
+		/* Skip unused slots and segments that are concurrently going away. */
+		if (dsm_control->item[i].refcnt <= 1)
 			continue;
 
 		/* If we've found our handle, we can stop searching. */

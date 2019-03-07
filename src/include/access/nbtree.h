@@ -4,7 +4,7 @@
  *	  header file for postgres btree access method implementation.
  *
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/nbtree.h
@@ -274,8 +274,7 @@ typedef struct BTMetaPageData
  *	When a new operator class is declared, we require that the user
  *	supply us with an amproc procedure (BTORDER_PROC) for determining
  *	whether, for two keys a and b, a < b, a = b, or a > b.  This routine
- *	must return < 0, 0, > 0, respectively, in these three cases.  (It must
- *	not return INT_MIN, since we may negate the result before using it.)
+ *	must return < 0, 0, > 0, respectively, in these three cases.
  *
  *	To facilitate accelerated sorting, an operator class may choose to
  *	offer a second procedure (BTSORTSUPPORT_PROC).  For full details, see
@@ -529,7 +528,7 @@ extern void _bt_parallel_advance_array_keys(IndexScanDesc scan);
  */
 extern bool _bt_doinsert(Relation rel, IndexTuple itup,
 			 IndexUniqueCheck checkUnique, Relation heapRel);
-extern Buffer _bt_getstackbuf(Relation rel, BTStack stack, int access);
+extern Buffer _bt_getstackbuf(Relation rel, BTStack stack);
 extern void _bt_finish_split(Relation rel, Buffer bbuf, BTStack stack);
 
 /*

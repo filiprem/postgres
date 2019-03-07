@@ -3,7 +3,7 @@
  * relnode.c
  *	  Relation-node lookup/construction routines
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -17,6 +17,7 @@
 #include <limits.h>
 
 #include "miscadmin.h"
+#include "optimizer/appendinfo.h"
 #include "optimizer/clauses.h"
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
@@ -57,6 +58,11 @@ static void add_join_rel(PlannerInfo *root, RelOptInfo *joinrel);
 static void build_joinrel_partition_info(RelOptInfo *joinrel,
 							 RelOptInfo *outer_rel, RelOptInfo *inner_rel,
 							 List *restrictlist, JoinType jointype);
+static void build_child_join_reltarget(PlannerInfo *root,
+						   RelOptInfo *parentrel,
+						   RelOptInfo *childrel,
+						   int nappinfos,
+						   AppendRelInfo **appinfos);
 
 
 /*
@@ -188,6 +194,7 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptInfo *parent)
 	rel->baserestrict_min_security = UINT_MAX;
 	rel->joininfo = NIL;
 	rel->has_eclass_joins = false;
+	rel->consider_partitionwise_join = false;	/* might get changed later */
 	rel->part_scheme = NULL;
 	rel->nparts = 0;
 	rel->boundinfo = NULL;
@@ -239,6 +246,13 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptInfo *parent)
 				palloc0((rel->max_attr - rel->min_attr + 1) * sizeof(Relids));
 			rel->attr_widths = (int32 *)
 				palloc0((rel->max_attr - rel->min_attr + 1) * sizeof(int32));
+			break;
+		case RTE_RESULT:
+			/* RTE_RESULT has no columns, nor could it have whole-row Var */
+			rel->min_attr = 0;
+			rel->max_attr = -1;
+			rel->attr_needed = NULL;
+			rel->attr_widths = NULL;
 			break;
 		default:
 			elog(ERROR, "unrecognized RTE kind: %d",
@@ -602,6 +616,7 @@ build_join_rel(PlannerInfo *root,
 	joinrel->baserestrict_min_security = UINT_MAX;
 	joinrel->joininfo = NIL;
 	joinrel->has_eclass_joins = false;
+	joinrel->consider_partitionwise_join = false;	/* might get changed later */
 	joinrel->top_parent_relids = NULL;
 	joinrel->part_scheme = NULL;
 	joinrel->nparts = 0;
@@ -732,6 +747,9 @@ build_child_join_rel(PlannerInfo *root, RelOptInfo *outer_rel,
 	/* Only joins between "other" relations land here. */
 	Assert(IS_OTHER_REL(outer_rel) && IS_OTHER_REL(inner_rel));
 
+	/* The parent joinrel should have consider_partitionwise_join set. */
+	Assert(parent_joinrel->consider_partitionwise_join);
+
 	joinrel->reloptkind = RELOPT_OTHER_JOINREL;
 	joinrel->relids = bms_union(outer_rel->relids, inner_rel->relids);
 	joinrel->rows = 0;
@@ -773,6 +791,7 @@ build_child_join_rel(PlannerInfo *root, RelOptInfo *outer_rel,
 	joinrel->baserestrictcost.per_tuple = 0;
 	joinrel->joininfo = NIL;
 	joinrel->has_eclass_joins = false;
+	joinrel->consider_partitionwise_join = false;	/* might get changed later */
 	joinrel->top_parent_relids = NULL;
 	joinrel->part_scheme = NULL;
 	joinrel->nparts = 0;
@@ -789,14 +808,13 @@ build_child_join_rel(PlannerInfo *root, RelOptInfo *outer_rel,
 	/* Compute information relevant to foreign relations. */
 	set_foreign_rel_properties(joinrel, outer_rel, inner_rel);
 
-	/* Build targetlist */
-	build_joinrel_tlist(root, joinrel, outer_rel);
-	build_joinrel_tlist(root, joinrel, inner_rel);
-	/* Add placeholder variables. */
-	add_placeholders_to_child_joinrel(root, joinrel, parent_joinrel);
+	appinfos = find_appinfos_by_relids(root, joinrel->relids, &nappinfos);
+
+	/* Set up reltarget struct */
+	build_child_join_reltarget(root, parent_joinrel, joinrel,
+							   nappinfos, appinfos);
 
 	/* Construct joininfo list. */
-	appinfos = find_appinfos_by_relids(root, joinrel->relids, &nappinfos);
 	joinrel->joininfo = (List *) adjust_appendrel_attrs(root,
 														(Node *) parent_joinrel->joininfo,
 														nappinfos,
@@ -825,7 +843,6 @@ build_child_join_rel(PlannerInfo *root, RelOptInfo *outer_rel,
 
 	/* Child joinrel is parallel safe if parent is parallel safe. */
 	joinrel->consider_parallel = parent_joinrel->consider_parallel;
-
 
 	/* Set estimates of the child-joinrel's size. */
 	set_joinrel_size_estimates(root, joinrel, outer_rel, inner_rel,
@@ -895,14 +912,8 @@ static void
 build_joinrel_tlist(PlannerInfo *root, RelOptInfo *joinrel,
 					RelOptInfo *input_rel)
 {
-	Relids		relids;
+	Relids		relids = joinrel->relids;
 	ListCell   *vars;
-
-	/* attrs_needed refers to parent relids and not those of a child. */
-	if (joinrel->top_parent_relids)
-		relids = joinrel->top_parent_relids;
-	else
-		relids = joinrel->relids;
 
 	foreach(vars, input_rel->reltarget->exprs)
 	{
@@ -919,54 +930,23 @@ build_joinrel_tlist(PlannerInfo *root, RelOptInfo *joinrel,
 
 		/*
 		 * Otherwise, anything in a baserel or joinrel targetlist ought to be
-		 * a Var. Children of a partitioned table may have ConvertRowtypeExpr
-		 * translating whole-row Var of a child to that of the parent.
-		 * Children of an inherited table or subquery child rels can not
-		 * directly participate in a join, so other kinds of nodes here.
+		 * a Var.  (More general cases can only appear in appendrel child
+		 * rels, which will never be seen here.)
 		 */
-		if (IsA(var, Var))
-		{
-			baserel = find_base_rel(root, var->varno);
-			ndx = var->varattno - baserel->min_attr;
-		}
-		else if (IsA(var, ConvertRowtypeExpr))
-		{
-			ConvertRowtypeExpr *child_expr = (ConvertRowtypeExpr *) var;
-			Var		   *childvar = (Var *) child_expr->arg;
-
-			/*
-			 * Child's whole-row references are converted to look like those
-			 * of parent using ConvertRowtypeExpr. There can be as many
-			 * ConvertRowtypeExpr decorations as the depth of partition tree.
-			 * The argument to the deepest ConvertRowtypeExpr is expected to
-			 * be a whole-row reference of the child.
-			 */
-			while (IsA(childvar, ConvertRowtypeExpr))
-			{
-				child_expr = (ConvertRowtypeExpr *) childvar;
-				childvar = (Var *) child_expr->arg;
-			}
-			Assert(IsA(childvar, Var) &&childvar->varattno == 0);
-
-			baserel = find_base_rel(root, childvar->varno);
-			ndx = 0 - baserel->min_attr;
-		}
-		else
+		if (!IsA(var, Var))
 			elog(ERROR, "unexpected node type in rel targetlist: %d",
 				 (int) nodeTag(var));
 
+		/* Get the Var's original base rel */
+		baserel = find_base_rel(root, var->varno);
 
-		/* Is the target expression still needed above this joinrel? */
+		/* Is it still needed above this joinrel? */
+		ndx = var->varattno - baserel->min_attr;
 		if (bms_nonempty_difference(baserel->attr_needed[ndx], relids))
 		{
 			/* Yup, add it to the output */
 			joinrel->reltarget->exprs = lappend(joinrel->reltarget->exprs, var);
-
-			/*
-			 * Vars have cost zero, so no need to adjust reltarget->cost. Even
-			 * if it's a ConvertRowtypeExpr, it will be computed only for the
-			 * base relation, costing nothing for a join.
-			 */
+			/* Vars have cost zero, so no need to adjust reltarget->cost */
 			joinrel->reltarget->width += baserel->attr_widths[ndx];
 		}
 	}
@@ -1136,36 +1116,6 @@ subbuild_joinrel_joinlist(RelOptInfo *joinrel,
 
 
 /*
- * build_empty_join_rel
- *		Build a dummy join relation describing an empty set of base rels.
- *
- * This is used for queries with empty FROM clauses, such as "SELECT 2+2" or
- * "INSERT INTO foo VALUES(...)".  We don't try very hard to make the empty
- * joinrel completely valid, since no real planning will be done with it ---
- * we just need it to carry a simple Result path out of query_planner().
- */
-RelOptInfo *
-build_empty_join_rel(PlannerInfo *root)
-{
-	RelOptInfo *joinrel;
-
-	/* The dummy join relation should be the only one ... */
-	Assert(root->join_rel_list == NIL);
-
-	joinrel = makeNode(RelOptInfo);
-	joinrel->reloptkind = RELOPT_JOINREL;
-	joinrel->relids = NULL;		/* empty set */
-	joinrel->rows = 1;			/* we produce one row for such cases */
-	joinrel->rtekind = RTE_JOIN;
-	joinrel->reltarget = create_empty_pathtarget();
-
-	root->join_rel_list = lappend(root->join_rel_list, joinrel);
-
-	return joinrel;
-}
-
-
-/*
  * fetch_upper_rel
  *		Build a RelOptInfo describing some post-scan/join query processing,
  *		or return a pre-existing one if somebody already built it.
@@ -1275,6 +1225,9 @@ get_baserel_parampathinfo(PlannerInfo *root, RelOptInfo *baserel,
 	double		rows;
 	ListCell   *lc;
 
+	/* If rel has LATERAL refs, every path for it should account for them */
+	Assert(bms_is_subset(baserel->lateral_relids, required_outer));
+
 	/* Unparameterized paths have no ParamPathInfo */
 	if (bms_is_empty(required_outer))
 		return NULL;
@@ -1369,6 +1322,9 @@ get_joinrel_parampathinfo(PlannerInfo *root, RelOptInfo *joinrel,
 	List	   *dropped_ecs;
 	double		rows;
 	ListCell   *lc;
+
+	/* If rel has LATERAL refs, every path for it should account for them */
+	Assert(bms_is_subset(joinrel->lateral_relids, required_outer));
 
 	/* Unparameterized paths have no ParamPathInfo or extra join clauses */
 	if (bms_is_empty(required_outer))
@@ -1561,6 +1517,9 @@ get_appendrel_parampathinfo(RelOptInfo *appendrel, Relids required_outer)
 {
 	ParamPathInfo *ppi;
 
+	/* If rel has LATERAL refs, every path for it should account for them */
+	Assert(bms_is_subset(appendrel->lateral_relids, required_outer));
+
 	/* Unparameterized paths have no ParamPathInfo */
 	if (bms_is_empty(required_outer))
 		return NULL;
@@ -1626,16 +1585,18 @@ build_joinrel_partition_info(RelOptInfo *joinrel, RelOptInfo *outer_rel,
 
 	/*
 	 * We can only consider this join as an input to further partitionwise
-	 * joins if (a) the input relations are partitioned, (b) the partition
-	 * schemes match, and (c) we can identify an equi-join between the
-	 * partition keys.  Note that if it were possible for
-	 * have_partkey_equi_join to return different answers for the same joinrel
-	 * depending on which join ordering we try first, this logic would break.
-	 * That shouldn't happen, though, because of the way the query planner
-	 * deduces implied equalities and reorders the joins. Please see
-	 * optimizer/README for details.
+	 * joins if (a) the input relations are partitioned and have
+	 * consider_partitionwise_join=true, (b) the partition schemes match, and
+	 * (c) we can identify an equi-join between the partition keys.  Note that
+	 * if it were possible for have_partkey_equi_join to return different
+	 * answers for the same joinrel depending on which join ordering we try
+	 * first, this logic would break.  That shouldn't happen, though, because
+	 * of the way the query planner deduces implied equalities and reorders
+	 * the joins.  Please see optimizer/README for details.
 	 */
 	if (!IS_PARTITIONED_REL(outer_rel) || !IS_PARTITIONED_REL(inner_rel) ||
+		!outer_rel->consider_partitionwise_join ||
+		!inner_rel->consider_partitionwise_join ||
 		outer_rel->part_scheme != inner_rel->part_scheme ||
 		!have_partkey_equi_join(joinrel, outer_rel, inner_rel,
 								jointype, restrictlist))
@@ -1687,6 +1648,12 @@ build_joinrel_partition_info(RelOptInfo *joinrel, RelOptInfo *outer_rel,
 	joinrel->part_rels =
 		(RelOptInfo **) palloc0(sizeof(RelOptInfo *) * joinrel->nparts);
 
+	/*
+	 * Set the consider_partitionwise_join flag.
+	 */
+	Assert(outer_rel->consider_partitionwise_join);
+	Assert(inner_rel->consider_partitionwise_join);
+	joinrel->consider_partitionwise_join = true;
 
 	/*
 	 * Construct partition keys for the join.
@@ -1767,4 +1734,27 @@ build_joinrel_partition_info(RelOptInfo *joinrel, RelOptInfo *outer_rel,
 		joinrel->partexprs[cnt] = partexpr;
 		joinrel->nullable_partexprs[cnt] = nullable_partexpr;
 	}
+}
+
+/*
+ * build_child_join_reltarget
+ *	  Set up a child-join relation's reltarget from a parent-join relation.
+ */
+static void
+build_child_join_reltarget(PlannerInfo *root,
+						   RelOptInfo *parentrel,
+						   RelOptInfo *childrel,
+						   int nappinfos,
+						   AppendRelInfo **appinfos)
+{
+	/* Build the targetlist */
+	childrel->reltarget->exprs = (List *)
+		adjust_appendrel_attrs(root,
+							   (Node *) parentrel->reltarget->exprs,
+							   nappinfos, appinfos);
+
+	/* Set the cost and width fields */
+	childrel->reltarget->cost.startup = parentrel->reltarget->cost.startup;
+	childrel->reltarget->cost.per_tuple = parentrel->reltarget->cost.per_tuple;
+	childrel->reltarget->width = parentrel->reltarget->width;
 }

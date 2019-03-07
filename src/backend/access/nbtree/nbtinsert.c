@@ -3,7 +3,7 @@
  * nbtinsert.c
  *	  Item insertion in Lehman and Yao btrees for Postgres.
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -24,7 +24,6 @@
 #include "storage/lmgr.h"
 #include "storage/predicate.h"
 #include "storage/smgr.h"
-#include "utils/tqual.h"
 
 /* Minimum tree height for application of fastpath optimization */
 #define BTREE_FASTPATH_MIN_LEVEL	2
@@ -814,10 +813,7 @@ _bt_findinsertloc(Relation rel,
  *		INCOMPLETE_SPLIT flag on it, and release the buffer.
  *
  *		The locking interactions in this code are critical.  You should
- *		grok Lehman and Yao's paper before making any changes.  In addition,
- *		you need to understand how we disambiguate duplicate keys in this
- *		implementation, in order to be able to find our location using
- *		L&Y "move right" operations.
+ *		grok Lehman and Yao's paper before making any changes.
  *----------
  */
 static void
@@ -876,10 +872,10 @@ _bt_insertonpg(Relation rel,
 		 * all the required conditions, including the fact that this page has
 		 * enough freespace. Note that this routine can in theory deal with
 		 * the situation where a NULL stack pointer is passed (that's what
-		 * would happen if the fastpath is taken), like it does during crash
-		 * recovery. But that path is much slower, defeating the very purpose
-		 * of the optimization.  The following assertion should protect us
-		 * from any future code changes that invalidate those assumptions.
+		 * would happen if the fastpath is taken). But that path is much
+		 * slower, defeating the very purpose of the optimization.  The
+		 * following assertion should protect us from any future code changes
+		 * that invalidate those assumptions.
 		 *
 		 * Note that whenever we fail to take the fastpath, we clear the
 		 * cached block. Checking for a valid cached block at this point is
@@ -1495,9 +1491,7 @@ _bt_split(Relation rel, Buffer buf, Buffer cbuf, OffsetNumber firstright,
 
 		/*
 		 * Log the contents of the right page in the format understood by
-		 * _bt_restore_page(). We set lastrdata->buffer to InvalidBuffer,
-		 * because we're going to recreate the whole page anyway, so it should
-		 * never be stored by XLogInsert.
+		 * _bt_restore_page().  The whole right page will be recreated.
 		 *
 		 * Direct access to page is not good but faster - we should implement
 		 * some new func in page API.  Note we only store the tuples
@@ -1807,8 +1801,8 @@ _bt_checksplitloc(FindSplitData *state,
  * and it'd be possible for some other process to try to split or delete
  * one of these pages, and get confused because it cannot find the downlink.)
  *
- * stack - stack showing how we got here.  May be NULL in cases that don't
- *			have to be efficient (concurrent ROOT split, WAL recovery)
+ * stack - stack showing how we got here.  Will be NULL when splitting true
+ *			root, or during concurrent root split, where we can be inefficient
  * is_root - we split the true root
  * is_only - we split a page alone on its level (might have been fast root)
  */
@@ -1890,7 +1884,7 @@ _bt_insert_parent(Relation rel,
 		 * 05/27/97
 		 */
 		stack->bts_btentry = bknum;
-		pbuf = _bt_getstackbuf(rel, stack, BT_WRITE);
+		pbuf = _bt_getstackbuf(rel, stack);
 
 		/*
 		 * Now we can unlock the right child. The left child will be unlocked
@@ -1980,10 +1974,11 @@ _bt_finish_split(Relation rel, Buffer lbuf, BTStack stack)
  *
  *		Adjusts bts_blkno & bts_offset if changed.
  *
- *		Returns InvalidBuffer if item not found (should not happen).
+ *		Returns write-locked buffer, or InvalidBuffer if item not found
+ *		(should not happen).
  */
 Buffer
-_bt_getstackbuf(Relation rel, BTStack stack, int access)
+_bt_getstackbuf(Relation rel, BTStack stack)
 {
 	BlockNumber blkno;
 	OffsetNumber start;
@@ -1997,11 +1992,11 @@ _bt_getstackbuf(Relation rel, BTStack stack, int access)
 		Page		page;
 		BTPageOpaque opaque;
 
-		buf = _bt_getbuf(rel, blkno, access);
+		buf = _bt_getbuf(rel, blkno, BT_WRITE);
 		page = BufferGetPage(buf);
 		opaque = (BTPageOpaque) PageGetSpecialPointer(page);
 
-		if (access == BT_WRITE && P_INCOMPLETE_SPLIT(opaque))
+		if (P_INCOMPLETE_SPLIT(opaque))
 		{
 			_bt_finish_split(rel, buf, stack->bts_parent);
 			continue;

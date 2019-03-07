@@ -4,7 +4,7 @@
  *		Common support routines for bin/scripts/
  *
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/bin/scripts/common.c
@@ -265,9 +265,9 @@ executeMaintenanceCommand(PGconn *conn, const char *query, bool echo)
  * finish using them, pg_free(*table).  *columns is a pointer into "spec",
  * possibly to its NUL terminator.
  */
-static void
-split_table_columns_spec(const char *spec, int encoding,
-						 char **table, const char **columns)
+void
+splitTableColumnsSpec(const char *spec, int encoding,
+					  char **table, const char **columns)
 {
 	bool		inquotes = false;
 	const char *cp = spec;
@@ -318,7 +318,7 @@ appendQualifiedRelation(PQExpBuffer buf, const char *spec,
 		return;
 	}
 
-	split_table_columns_spec(spec, PQclientEncoding(conn), &table, &columns);
+	splitTableColumnsSpec(spec, PQclientEncoding(conn), &table, &columns);
 
 	/*
 	 * Query must remain ABSOLUTELY devoid of unqualified names.  This would
@@ -335,7 +335,7 @@ appendQualifiedRelation(PQExpBuffer buf, const char *spec,
 	appendStringLiteralConn(&sql, table, conn);
 	appendPQExpBufferStr(&sql, "::pg_catalog.regclass;");
 
-	executeCommand(conn, "RESET search_path", progname, echo);
+	executeCommand(conn, "RESET search_path;", progname, echo);
 
 	/*
 	 * One row is a typical result, as is a nonexistent relation ERROR.
@@ -356,8 +356,7 @@ appendQualifiedRelation(PQExpBuffer buf, const char *spec,
 		exit(1);
 	}
 	appendPQExpBufferStr(buf,
-						 fmtQualifiedId(PQserverVersion(conn),
-										PQgetvalue(res, 0, 1),
+						 fmtQualifiedId(PQgetvalue(res, 0, 1),
 										PQgetvalue(res, 0, 0)));
 	appendPQExpBufferStr(buf, columns);
 	PQclear(res);

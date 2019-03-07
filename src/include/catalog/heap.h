@@ -4,7 +4,7 @@
  *	  prototypes for functions in backend/catalog/heap.c
  *
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/catalog/heap.h
@@ -18,6 +18,10 @@
 #include "catalog/objectaddress.h"
 #include "parser/parse_node.h"
 
+
+/* flag bits for CheckAttributeType/CheckAttributeNamesTypes */
+#define CHKATYPE_ANYARRAY		0x01	/* allow ANYARRAY */
+#define CHKATYPE_ANYRECORD		0x02	/* allow RECORD and RECORD[] */
 
 typedef struct RawColumnDefault
 {
@@ -45,6 +49,7 @@ extern Relation heap_create(const char *relname,
 			Oid reltablespace,
 			Oid relid,
 			Oid relfilenode,
+			Oid accessmtd,
 			TupleDesc tupDesc,
 			char relkind,
 			char relpersistence,
@@ -59,14 +64,13 @@ extern Oid heap_create_with_catalog(const char *relname,
 						 Oid reltypeid,
 						 Oid reloftypeid,
 						 Oid ownerid,
+						 Oid accessmtd,
 						 TupleDesc tupdesc,
 						 List *cooked_constraints,
 						 char relkind,
 						 char relpersistence,
 						 bool shared_relation,
 						 bool mapped_relation,
-						 bool oidislocal,
-						 int oidinhcount,
 						 OnCommitAction oncommit,
 						 Datum reloptions,
 						 bool use_user_acl,
@@ -102,7 +106,8 @@ extern List *AddRelationNewConstraints(Relation rel,
 						  List *newConstraints,
 						  bool allow_merge,
 						  bool is_local,
-						  bool is_internal);
+						  bool is_internal,
+						  const char *queryString);
 
 extern void RelationClearMissing(Relation rel);
 extern void SetAttrMissing(Oid relid, char *attname, char *value);
@@ -126,19 +131,17 @@ extern void RemoveAttrDefault(Oid relid, AttrNumber attnum,
 extern void RemoveAttrDefaultById(Oid attrdefId);
 extern void RemoveStatistics(Oid relid, AttrNumber attnum);
 
-extern Form_pg_attribute SystemAttributeDefinition(AttrNumber attno,
-						  bool relhasoids);
+extern const FormData_pg_attribute *SystemAttributeDefinition(AttrNumber attno);
 
-extern Form_pg_attribute SystemAttributeByName(const char *attname,
-					  bool relhasoids);
+extern const FormData_pg_attribute *SystemAttributeByName(const char *attname);
 
 extern void CheckAttributeNamesTypes(TupleDesc tupdesc, char relkind,
-						 bool allow_system_table_mods);
+						 int flags);
 
 extern void CheckAttributeType(const char *attname,
 				   Oid atttypid, Oid attcollation,
 				   List *containing_rowtypes,
-				   bool allow_system_table_mods);
+				   int flags);
 
 /* pg_partitioned_table catalog manipulation functions */
 extern void StorePartitionKey(Relation rel,

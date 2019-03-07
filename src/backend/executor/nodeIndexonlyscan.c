@@ -3,7 +3,7 @@
  * nodeIndexonlyscan.c
  *	  Routines to support index-only scans
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -30,7 +30,9 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/relscan.h"
+#include "access/tupdesc.h"
 #include "access/visibilitymap.h"
 #include "executor/execdebug.h"
 #include "executor/nodeIndexonlyscan.h"
@@ -199,7 +201,7 @@ IndexOnlyNext(IndexOnlyScanState *node)
 			 */
 			Assert(slot->tts_tupleDescriptor->natts ==
 				   scandesc->xs_hitupdesc->natts);
-			ExecStoreTuple(scandesc->xs_hitup, slot, InvalidBuffer, false);
+			ExecStoreHeapTuple(scandesc->xs_hitup, slot, false);
 		}
 		else if (scandesc->xs_itup)
 			StoreIndexTuple(slot, scandesc->xs_itup, scandesc->xs_itupdesc);
@@ -267,23 +269,17 @@ IndexOnlyNext(IndexOnlyScanState *node)
 static void
 StoreIndexTuple(TupleTableSlot *slot, IndexTuple itup, TupleDesc itupdesc)
 {
-	int			nindexatts = itupdesc->natts;
-	Datum	   *values = slot->tts_values;
-	bool	   *isnull = slot->tts_isnull;
-	int			i;
-
 	/*
-	 * Note: we must use the tupdesc supplied by the AM in index_getattr, not
-	 * the slot's tupdesc, in case the latter has different datatypes (this
-	 * happens for btree name_ops in particular).  They'd better have the same
-	 * number of columns though, as well as being datatype-compatible which is
-	 * something we can't so easily check.
+	 * Note: we must use the tupdesc supplied by the AM in index_deform_tuple,
+	 * not the slot's tupdesc, in case the latter has different datatypes
+	 * (this happens for btree name_ops in particular).  They'd better have
+	 * the same number of columns though, as well as being datatype-compatible
+	 * which is something we can't so easily check.
 	 */
-	Assert(slot->tts_tupleDescriptor->natts == nindexatts);
+	Assert(slot->tts_tupleDescriptor->natts == itupdesc->natts);
 
 	ExecClearTuple(slot);
-	for (i = 0; i < nindexatts; i++)
-		values[i] = index_getattr(itup, i + 1, itupdesc, &isnull[i]);
+	index_deform_tuple(itup, itupdesc, slot->tts_values, slot->tts_isnull);
 	ExecStoreVirtualTuple(slot);
 }
 
@@ -373,14 +369,12 @@ ExecEndIndexOnlyScan(IndexOnlyScanState *node)
 {
 	Relation	indexRelationDesc;
 	IndexScanDesc indexScanDesc;
-	Relation	relation;
 
 	/*
 	 * extract information from the node
 	 */
 	indexRelationDesc = node->ioss_RelationDesc;
 	indexScanDesc = node->ioss_ScanDesc;
-	relation = node->ss.ss_currentRelation;
 
 	/* Release VM buffer pin, if any. */
 	if (node->ioss_VMBuffer != InvalidBuffer)
@@ -401,7 +395,8 @@ ExecEndIndexOnlyScan(IndexOnlyScanState *node)
 	/*
 	 * clear out tuple table slots
 	 */
-	ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
+	if (node->ss.ps.ps_ResultTupleSlot)
+		ExecClearTuple(node->ss.ps.ps_ResultTupleSlot);
 	ExecClearTuple(node->ss.ss_ScanTupleSlot);
 
 	/*
@@ -411,11 +406,6 @@ ExecEndIndexOnlyScan(IndexOnlyScanState *node)
 		index_endscan(indexScanDesc);
 	if (indexRelationDesc)
 		index_close(indexRelationDesc, NoLock);
-
-	/*
-	 * close the heap relation.
-	 */
-	ExecCloseScanRelation(relation);
 }
 
 /* ----------------------------------------------------------------
@@ -430,7 +420,7 @@ ExecIndexOnlyMarkPos(IndexOnlyScanState *node)
 {
 	EState	   *estate = node->ss.ps.state;
 
-	if (estate->es_epqTuple != NULL)
+	if (estate->es_epqTupleSlot != NULL)
 	{
 		/*
 		 * We are inside an EvalPlanQual recheck.  If a test tuple exists for
@@ -444,7 +434,7 @@ ExecIndexOnlyMarkPos(IndexOnlyScanState *node)
 		Index		scanrelid = ((Scan *) node->ss.ps.plan)->scanrelid;
 
 		Assert(scanrelid > 0);
-		if (estate->es_epqTupleSet[scanrelid - 1])
+		if (estate->es_epqTupleSlot[scanrelid - 1] != NULL)
 		{
 			/* Verify the claim above */
 			if (!estate->es_epqScanDone[scanrelid - 1])
@@ -465,13 +455,13 @@ ExecIndexOnlyRestrPos(IndexOnlyScanState *node)
 {
 	EState	   *estate = node->ss.ps.state;
 
-	if (estate->es_epqTuple != NULL)
+	if (estate->es_epqTupleSlot != NULL)
 	{
 		/* See comments in ExecIndexOnlyMarkPos */
 		Index		scanrelid = ((Scan *) node->ss.ps.plan)->scanrelid;
 
 		Assert(scanrelid > 0);
-		if (estate->es_epqTupleSet[scanrelid - 1])
+		if (estate->es_epqTupleSlot[scanrelid - 1])
 		{
 			/* Verify the claim above */
 			if (!estate->es_epqScanDone[scanrelid - 1])
@@ -518,7 +508,7 @@ ExecInitIndexOnlyScan(IndexOnlyScan *node, EState *estate, int eflags)
 	ExecAssignExprContext(estate, &indexstate->ss.ps);
 
 	/*
-	 * open the base relation and acquire appropriate lock on it.
+	 * open the scan relation
 	 */
 	currentRelation = ExecOpenScanRelation(estate, node->scan.scanrelid, eflags);
 
@@ -532,15 +522,14 @@ ExecInitIndexOnlyScan(IndexOnlyScan *node, EState *estate, int eflags)
 	 * types of the original datums.  (It's the AM's responsibility to return
 	 * suitable data anyway.)
 	 */
-	tupDesc = ExecTypeFromTL(node->indextlist, false);
-	ExecInitScanTupleSlot(estate, &indexstate->ss, tupDesc);
+	tupDesc = ExecTypeFromTL(node->indextlist);
+	ExecInitScanTupleSlot(estate, &indexstate->ss, tupDesc, &TTSOpsHeapTuple);
 
 	/*
-	 * Initialize result slot, type and projection info.  The node's
-	 * targetlist will contain Vars with varno = INDEX_VAR, referencing the
-	 * scan tuple.
+	 * Initialize result type and projection info.  The node's targetlist will
+	 * contain Vars with varno = INDEX_VAR, referencing the scan tuple.
 	 */
-	ExecInitResultTupleSlotTL(estate, &indexstate->ss.ps);
+	ExecInitResultTypeTL(&indexstate->ss.ps);
 	ExecAssignScanProjectionInfoWithVarno(&indexstate->ss, INDEX_VAR);
 
 	/*

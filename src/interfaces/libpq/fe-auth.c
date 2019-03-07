@@ -3,7 +3,7 @@
  * fe-auth.c
  *	   The front-end (client) authorization routines
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -526,14 +526,24 @@ pg_SASL_init(PGconn *conn, int payloadlen)
 
 		/*
 		 * Select the mechanism to use.  Pick SCRAM-SHA-256-PLUS over anything
-		 * else if a channel binding type is set.  Pick SCRAM-SHA-256 if
-		 * nothing else has already been picked.  If we add more mechanisms, a
-		 * more refined priority mechanism might become necessary.
+		 * else if a channel binding type is set and if the client supports
+		 * it. Pick SCRAM-SHA-256 if nothing else has already been picked.  If
+		 * we add more mechanisms, a more refined priority mechanism might
+		 * become necessary.
 		 */
 		if (strcmp(mechanism_buf.data, SCRAM_SHA_256_PLUS_NAME) == 0)
 		{
 			if (conn->ssl_in_use)
+			{
+				/*
+				 * The server has offered SCRAM-SHA-256-PLUS, which is only
+				 * supported by the client if a hash of the peer certificate
+				 * can be created.
+				 */
+#ifdef HAVE_PGTLS_GET_PEER_CERTIFICATE_HASH
 				selected_mechanism = SCRAM_SHA_256_PLUS_NAME;
+#endif
+			}
 			else
 			{
 				/*
@@ -756,11 +766,11 @@ pg_local_sendauth(PGconn *conn)
 
 	if (sendmsg(conn->sock, &msg, 0) == -1)
 	{
-		char		sebuf[256];
+		char		sebuf[PG_STRERROR_R_BUFLEN];
 
 		printfPQExpBuffer(&conn->errorMessage,
 						  "pg_local_sendauth: sendmsg: %s\n",
-						  pqStrerror(errno, sebuf, sizeof(sebuf)));
+						  strerror_r(errno, sebuf, sizeof(sebuf)));
 		return STATUS_ERROR;
 	}
 	return STATUS_OK;
@@ -1098,7 +1108,7 @@ pg_fe_getauthname(PQExpBuffer errorMessage)
 			printfPQExpBuffer(errorMessage,
 							  libpq_gettext("could not look up local user ID %d: %s\n"),
 							  (int) user_id,
-							  pqStrerror(pwerr, pwdbuf, sizeof(pwdbuf)));
+							  strerror_r(pwerr, pwdbuf, sizeof(pwdbuf)));
 		else
 			printfPQExpBuffer(errorMessage,
 							  libpq_gettext("local user with ID %d does not exist\n"),

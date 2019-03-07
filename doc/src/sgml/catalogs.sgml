@@ -67,7 +67,7 @@
 
      <row>
       <entry><link linkend="catalog-pg-amproc"><structname>pg_amproc</structname></link></entry>
-      <entry>access method support procedures</entry>
+      <entry>access method support functions</entry>
      </row>
 
      <row>
@@ -693,7 +693,7 @@
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -814,8 +814,8 @@
 
   <para>
    The catalog <structname>pg_amproc</structname> stores information about
-   support procedures associated with access method operator families.  There
-   is one row for each support procedure belonging to an operator family.
+   support functions associated with access method operator families.  There
+   is one row for each support function belonging to an operator family.
   </para>
 
   <table>
@@ -836,7 +836,7 @@
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -864,14 +864,14 @@
       <entry><structfield>amprocnum</structfield></entry>
       <entry><type>int2</type></entry>
       <entry></entry>
-      <entry>Support procedure number</entry>
+      <entry>Support function number</entry>
      </row>
 
      <row>
       <entry><structfield>amproc</structfield></entry>
       <entry><type>regproc</type></entry>
       <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry>OID of the procedure</entry>
+      <entry>OID of the function</entry>
      </row>
 
     </tbody>
@@ -882,9 +882,9 @@
    The usual interpretation of the
    <structfield>amproclefttype</structfield> and <structfield>amprocrighttype</structfield> fields
    is that they identify the left and right input types of the operator(s)
-   that a particular support procedure supports.  For some access methods
-   these match the input data type(s) of the support procedure itself, for
-   others not.  There is a notion of <quote>default</quote> support procedures for
+   that a particular support function supports.  For some access methods
+   these match the input data type(s) of the support function itself, for
+   others not.  There is a notion of <quote>default</quote> support functions for
    an index, which are those with <structfield>amproclefttype</structfield> and
    <structfield>amprocrighttype</structfield> both equal to the index operator class's
    <structfield>opcintype</structfield>.
@@ -901,11 +901,11 @@
   </indexterm>
 
   <para>
-   The catalog <structname>pg_attrdef</structname> stores column default values.  The main information
-   about columns is stored in <structname>pg_attribute</structname>
-   (see below).  Only columns that explicitly specify a default value
-   (when the table is created or the column is added) will have an
-   entry here.
+   The catalog <structname>pg_attrdef</structname> stores column default
+   values.  The main information about columns is stored in
+   <link linkend="catalog-pg-attribute"><structname>pg_attribute</structname></link>.
+   Only columns for which a default value has been explicitly set will have
+   an entry here.
   </para>
 
   <table>
@@ -926,7 +926,7 @@
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -947,27 +947,13 @@
       <entry><structfield>adbin</structfield></entry>
       <entry><type>pg_node_tree</type></entry>
       <entry></entry>
-      <entry>The internal representation of the column default value</entry>
-     </row>
-
-     <row>
-      <entry><structfield>adsrc</structfield></entry>
-      <entry><type>text</type></entry>
-      <entry></entry>
-      <entry>A human-readable representation of the default value</entry>
+      <entry>The column default value, in <function>nodeToString()</function>
+      representation.  Use <literal>pg_get_expr(adbin, adrelid)</literal> to
+      convert it to an SQL expression.</entry>
      </row>
     </tbody>
    </tgroup>
   </table>
-
-   <para>
-    The <structfield>adsrc</structfield> field is historical, and is best
-    not used, because it does not track outside changes that might affect
-    the representation of the default value.  Reverse-compiling the
-    <structfield>adbin</structfield> field (with <function>pg_get_expr</function> for
-    example) is a better way to display the default value.
-   </para>
-
  </sect1>
 
 
@@ -1326,7 +1312,7 @@
      <row>
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -1552,7 +1538,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -1675,7 +1661,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -1868,15 +1854,6 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
      </row>
 
      <row>
-      <entry><structfield>relhasoids</structfield></entry>
-      <entry><type>bool</type></entry>
-      <entry></entry>
-      <entry>
-       True if we generate an OID for each row of the relation
-      </entry>
-     </row>
-
-     <row>
       <entry><structfield>relhasrules</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>
@@ -1900,7 +1877,9 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>relhassubclass</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>
-      <entry>True if table has (or once had) any inheritance children</entry>
+      <entry>
+       True if table or index has (or once had) any inheritance children
+      </entry>
      </row>
 
      <row>
@@ -1948,7 +1927,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>relispartition</structfield></entry>
       <entry><type>bool</type></entry>
       <entry></entry>
-      <entry>True if table is a partition</entry>
+      <entry>True if table or index is a partition</entry>
      </row>
 
      <row>
@@ -1994,10 +1973,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><type>aclitem[]</type></entry>
       <entry></entry>
       <entry>
-       Access privileges; see
-       <xref linkend="sql-grant"/> and
-       <xref linkend="sql-revoke"/>
-       for details
+       Access privileges; see <xref linkend="ddl-priv"/> for details
       </entry>
      </row>
 
@@ -2067,7 +2043,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -2205,7 +2181,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -2374,14 +2350,6 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
      </row>
 
      <row>
-      <entry><structfield>conincluding</structfield></entry>
-      <entry><type>int2[]</type></entry>
-      <entry><literal><link linkend="catalog-pg-attribute"><structname>pg_attribute</structname></link>.attnum</literal></entry>
-      <entry>List of the non-constrained columns which are included into
-        the same index as the constrained columns</entry>
-     </row>
-
-     <row>
       <entry><structfield>confkey</structfield></entry>
       <entry><type>int2[]</type></entry>
       <entry><literal><link linkend="catalog-pg-attribute"><structname>pg_attribute</structname></link>.attnum</literal></entry>
@@ -2420,14 +2388,10 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>conbin</structfield></entry>
       <entry><type>pg_node_tree</type></entry>
       <entry></entry>
-      <entry>If a check constraint, an internal representation of the expression</entry>
-     </row>
-
-     <row>
-      <entry><structfield>consrc</structfield></entry>
-      <entry><type>text</type></entry>
-      <entry></entry>
-      <entry>If a check constraint, a human-readable representation of the expression</entry>
+      <entry>If a check constraint, an internal representation of the
+      expression.  (It's recommended to use
+      <function>pg_get_constraintdef()</function> to extract the definition of
+      a check constraint.)</entry>
      </row>
     </tbody>
    </tgroup>
@@ -2442,15 +2406,6 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
    same contents as <structname>pg_index</structname>.<structfield>indkey</structfield> for the
    index.)
   </para>
-
-  <note>
-   <para>
-    <structfield>consrc</structfield> is not updated when referenced objects
-    change; for example, it won't track renaming of columns.  Rather than
-    relying on this field, it's best to use <function>pg_get_constraintdef()</function>
-    to extract the definition of a check constraint.
-   </para>
-  </note>
 
   <note>
    <para>
@@ -2471,7 +2426,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
 
   <para>
    The catalog <structname>pg_conversion</structname> describes
-   encoding conversion procedures.  See <xref linkend="sql-createconversion"/>
+   encoding conversion functions.  See <xref linkend="sql-createconversion"/>
    for more information.
   </para>
 
@@ -2493,7 +2448,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -2537,7 +2492,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>conproc</structfield></entry>
       <entry><type>regproc</type></entry>
       <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry>Conversion procedure</entry>
+      <entry>Conversion function</entry>
      </row>
 
      <row>
@@ -2593,7 +2548,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -2721,10 +2676,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><type>aclitem[]</type></entry>
       <entry></entry>
       <entry>
-       Access privileges; see
-       <xref linkend="sql-grant"/> and
-       <xref linkend="sql-revoke"/>
-       for details
+       Access privileges; see <xref linkend="ddl-priv"/> for details
       </entry>
      </row>
     </tbody>
@@ -2823,7 +2775,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -3018,7 +2970,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
        referenced object, and should be automatically dropped
        (regardless of <literal>RESTRICT</literal> or <literal>CASCADE</literal>
        mode) if the referenced object is dropped.  Example: a named
-       constraint on a table is made autodependent on the table, so
+       constraint on a table is made auto-dependent on the table, so
        that it will go away if the table is dropped.
       </para>
      </listitem>
@@ -3030,38 +2982,61 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <para>
        The dependent object was created as part of creation of the
        referenced object, and is really just a part of its internal
-       implementation.  A <command>DROP</command> of the dependent object
-       will be disallowed outright (we'll tell the user to issue a
-       <command>DROP</command> against the referenced object, instead).  A
-       <command>DROP</command> of the referenced object will be propagated
-       through to drop the dependent object whether
-       <command>CASCADE</command> is specified or not.  Example: a trigger
-       that's created to enforce a foreign-key constraint is made
-       internally dependent on the constraint's
-       <structname>pg_constraint</structname> entry.
+       implementation.  A direct <command>DROP</command> of the dependent
+       object will be disallowed outright (we'll tell the user to issue
+       a <command>DROP</command> against the referenced object, instead).
+       A <command>DROP</command> of the referenced object will result in
+       automatically dropping the dependent object
+       whether <literal>CASCADE</literal> is specified or not.  If the
+       dependent object is reached due to a dependency on some other object,
+       the drop is converted to a drop of the referenced object, so
+       that <literal>NORMAL</literal> and <literal>AUTO</literal>
+       dependencies of the dependent object behave much like they were
+       dependencies of the referenced object.
+       Example: a view's <literal>ON SELECT</literal> rule is made
+       internally dependent on the view, preventing it from being dropped
+       while the view remains.  Dependencies of the rule (such as tables it
+       refers to) act as if they were dependencies of the view.
       </para>
      </listitem>
     </varlistentry>
 
     <varlistentry>
-     <term><symbol>DEPENDENCY_INTERNAL_AUTO</symbol> (<literal>I</literal>)</term>
+     <term><symbol>DEPENDENCY_PARTITION_PRI</symbol> (<literal>P</literal>)</term>
+     <term><symbol>DEPENDENCY_PARTITION_SEC</symbol> (<literal>S</literal>)</term>
      <listitem>
       <para>
        The dependent object was created as part of creation of the
        referenced object, and is really just a part of its internal
-       implementation.  A <command>DROP</command> of the dependent object
-       will be disallowed outright (we'll tell the user to issue a
-       <command>DROP</command> against the referenced object, instead).
-       While a regular internal dependency will prevent
-       the dependent object from being dropped while any such dependencies
-       remain, <literal>DEPENDENCY_INTERNAL_AUTO</literal> will allow such
-       a drop as long as the object can be found by following any of such
+       implementation; however, unlike <literal>INTERNAL</literal>,
+       there is more than one such referenced object.  The dependent object
+       must not be dropped unless at least one of these referenced objects
+       is dropped; if any one is, the dependent object should be dropped
+       whether or not <literal>CASCADE</literal> is specified.  Also
+       unlike <literal>INTERNAL</literal>, a drop of some other object
+       that the dependent object depends on does not result in automatic
+       deletion of any partition-referenced object.  Hence, if the drop
+       does not cascade to at least one of these objects via some other
+       path, it will be refused.  (In most cases, the dependent object
+       shares all its non-partition dependencies with at least one
+       partition-referenced object, so that this restriction does not
+       result in blocking any cascaded delete.)
+       Primary and secondary partition dependencies behave identically
+       except that the primary dependency is preferred for use in error
+       messages; hence, a partition-dependent object should have one
+       primary partition dependency and one or more secondary partition
        dependencies.
-       Example: an index on a partition is made internal-auto-dependent on
-       both the partition itself as well as on the index on the parent
-       partitioned table; so the partition index is dropped together with
-       either the partition it indexes, or with the parent index it is
-       attached to.
+       Note that partition dependencies are made in addition to, not
+       instead of, any dependencies the object would normally have.  This
+       simplifies <command>ATTACH/DETACH PARTITION</command> operations:
+       the partition dependencies need only be added or removed.
+       Example: a child partitioned index is made partition-dependent
+       on both the partition table it is on and the parent partitioned
+       index, so that it goes away if either of those is dropped, but
+       not otherwise.  The dependency on the parent index is primary,
+       so that if the user tries to drop the child partitioned index,
+       the error message will suggest dropping the parent index instead
+       (not the table).
       </para>
      </listitem>
     </varlistentry>
@@ -3074,9 +3049,10 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
        the referenced object (see
        <link linkend="catalog-pg-extension"><structname>pg_extension</structname></link>).
        The dependent object can be dropped only via
-       <command>DROP EXTENSION</command> on the referenced object.  Functionally
-       this dependency type acts the same as an internal dependency, but
-       it's kept separate for clarity and to simplify <application>pg_dump</application>.
+       <command>DROP EXTENSION</command> on the referenced object.
+       Functionally this dependency type acts the same as
+       an <literal>INTERNAL</literal> dependency, but it's kept separate for
+       clarity and to simplify <application>pg_dump</application>.
       </para>
      </listitem>
     </varlistentry>
@@ -3086,10 +3062,13 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
      <listitem>
       <para>
        The dependent object is not a member of the extension that is the
-       referenced object (and so should not be ignored by pg_dump), but
-       cannot function without it and should be dropped when the
-       extension itself is. The dependent object may be dropped on its
-       own as well.
+       referenced object (and so it should not be ignored
+       by <application>pg_dump</application>), but it cannot function
+       without the extension and should be auto-dropped if the extension is.
+       The dependent object may be dropped on its own as well.
+       Functionally this dependency type acts the same as
+       an <literal>AUTO</literal> dependency, but it's kept separate for
+       clarity and to simplify <application>pg_dump</application>.
       </para>
      </listitem>
     </varlistentry>
@@ -3109,6 +3088,19 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
    </variablelist>
 
    Other dependency flavors might be needed in future.
+  </para>
+
+  <para>
+   Note that it's quite possible for two objects to be linked by more than
+   one <structname>pg_depend</structname> entry.  For example, a child
+   partitioned index would have both a partition-type dependency on its
+   associated partition table, and an auto dependency on each column of
+   that table that it indexes.  This sort of situation expresses the union
+   of multiple dependency semantics.  A dependent object can be dropped
+   without <literal>CASCADE</literal> if any of its dependencies satisfies
+   its condition for automatic dropping.  Conversely, all the
+   dependencies' restrictions about which objects must be dropped together
+   must be satisfied.
   </para>
 
  </sect1>
@@ -3221,7 +3213,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -3384,7 +3376,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -3487,7 +3479,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -3533,10 +3525,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><type>aclitem[]</type></entry>
       <entry></entry>
       <entry>
-       Access privileges; see
-       <xref linkend="sql-grant"/> and
-       <xref linkend="sql-revoke"/>
-       for details
+       Access privileges; see <xref linkend="ddl-priv"/> for details
       </entry>
      </row>
 
@@ -3586,7 +3575,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -3629,10 +3618,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><type>aclitem[]</type></entry>
       <entry></entry>
       <entry>
-       Access privileges; see
-       <xref linkend="sql-grant"/> and
-       <xref linkend="sql-revoke"/>
-       for details
+       Access privileges; see <xref linkend="ddl-priv"/> for details
       </entry>
      </row>
 
@@ -4094,9 +4080,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry></entry>
       <entry>
        The initial access privileges; see
-       <xref linkend="sql-grant"/> and
-       <xref linkend="sql-revoke"/>
-       for details
+       <xref linkend="ddl-priv"/> for details
       </entry>
      </row>
 
@@ -4139,7 +4123,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -4221,10 +4205,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><type>aclitem[]</type></entry>
       <entry></entry>
       <entry>
-       Access privileges; see
-       <xref linkend="sql-grant"/> and
-       <xref linkend="sql-revoke"/>
-       for details
+       Access privileges; see <xref linkend="ddl-priv"/> for details
       </entry>
      </row>
     </tbody>
@@ -4346,7 +4327,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -4361,10 +4342,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><type>aclitem[]</type></entry>
       <entry></entry>
       <entry>
-       Access privileges; see
-       <xref linkend="sql-grant"/> and
-       <xref linkend="sql-revoke"/>
-       for details
+       Access privileges; see <xref linkend="ddl-priv"/> for details
       </entry>
      </row>
 
@@ -4406,7 +4384,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -4428,10 +4406,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><type>aclitem[]</type></entry>
       <entry></entry>
       <entry>
-       Access privileges; see
-       <xref linkend="sql-grant"/> and
-       <xref linkend="sql-revoke"/>
-       for details
+       Access privileges; see <xref linkend="ddl-priv"/> for details
       </entry>
      </row>
     </tbody>
@@ -4481,7 +4456,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -4586,7 +4561,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -4743,7 +4718,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -5153,7 +5128,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -5211,11 +5186,11 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
      </row>
 
      <row>
-      <entry><structfield>protransform</structfield></entry>
+      <entry><structfield>prosupport</structfield></entry>
       <entry><type>regproc</type></entry>
       <entry><literal><link linkend="catalog-pg-proc"><structname>pg_proc</structname></link>.oid</literal></entry>
-      <entry>Calls to this function can be simplified by this other function
-       (see <xref linkend="xfunc-transform-functions"/>)</entry>
+      <entry>Optional planner support function for this function
+       (see <xref linkend="xfunc-optimization"/>)</entry>
      </row>
 
      <row>
@@ -5438,10 +5413,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><type>aclitem[]</type></entry>
       <entry></entry>
       <entry>
-       Access privileges; see
-       <xref linkend="sql-grant"/> and
-       <xref linkend="sql-revoke"/>
-       for details
+       Access privileges; see <xref linkend="ddl-priv"/> for details
       </entry>
      </row>
     </tbody>
@@ -5491,7 +5463,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -5767,7 +5739,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -6463,6 +6435,18 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
      </row>
 
      <row>
+      <entry><structfield>stacoll<replaceable>N</replaceable></structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-collation"><structname>pg_collation</structname></link>.oid</literal></entry>
+      <entry>
+       The collation used to derive the statistics stored in the
+       <replaceable>N</replaceable>th <quote>slot</quote>.  For example, a
+       histogram slot for a collatable column would show the collation that
+       defines the sort order of the data.  Zero for noncollatable data.
+      </entry>
+     </row>
+
+     <row>
       <entry><structfield>stanumbers<replaceable>N</replaceable></structfield></entry>
       <entry><type>float4[]</type></entry>
       <entry></entry>
@@ -6649,7 +6633,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -6830,7 +6814,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -6852,10 +6836,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><type>aclitem[]</type></entry>
       <entry></entry>
       <entry>
-       Access privileges; see
-       <xref linkend="sql-grant"/> and
-       <xref linkend="sql-revoke"/>
-       for details
+       Access privileges; see <xref linkend="ddl-priv"/> for details
       </entry>
      </row>
 
@@ -6973,7 +6954,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -7182,7 +7163,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -7328,7 +7309,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -7411,7 +7392,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -7508,7 +7489,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -7582,7 +7563,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -7925,10 +7906,10 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><para>
        <structfield>typcollation</structfield> specifies the collation
        of the type.  If the type does not support collations, this will
-       be zero.  A base type that supports collations will have
-       <symbol>DEFAULT_COLLATION_OID</symbol> here.  A domain over a
-       collatable type can have some other collation OID, if one was
-       specified for the domain.
+       be zero.  A base type that supports collations will have a nonzero
+       value here, typically <symbol>DEFAULT_COLLATION_OID</symbol>.
+       A domain over a collatable type can have a collation OID different
+       from its base type's, if one was specified for the domain.
       </para></entry>
      </row>
 
@@ -7965,10 +7946,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><type>aclitem[]</type></entry>
       <entry></entry>
       <entry>
-       Access privileges; see
-       <xref linkend="sql-grant"/> and
-       <xref linkend="sql-revoke"/>
-       for details
+       Access privileges; see <xref linkend="ddl-priv"/> for details
       </entry>
      </row>
     </tbody>
@@ -8094,7 +8072,7 @@ SCRAM-SHA-256$<replaceable>&lt;iteration count&gt;</replaceable>:<replaceable>&l
       <entry><structfield>oid</structfield></entry>
       <entry><type>oid</type></entry>
       <entry></entry>
-      <entry>Row identifier (hidden attribute; must be explicitly selected)</entry>
+      <entry>Row identifier</entry>
      </row>
 
      <row>
@@ -10654,7 +10632,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
 
      <row>
       <entry><structfield>valuntil</structfield></entry>
-      <entry><type>abstime</type></entry>
+      <entry><type>timestamptz</type></entry>
       <entry></entry>
       <entry>Password expiry time (only used for password authentication)</entry>
      </row>
@@ -11133,7 +11111,7 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
 
      <row>
       <entry><structfield>valuntil</structfield></entry>
-      <entry><type>abstime</type></entry>
+      <entry><type>timestamptz</type></entry>
       <entry>Password expiry time (only used for password authentication)</entry>
      </row>
 

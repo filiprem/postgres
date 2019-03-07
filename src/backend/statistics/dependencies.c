@@ -3,7 +3,7 @@
  * dependencies.c
  *	  POSTGRES functional dependencies
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -18,11 +18,11 @@
 #include "catalog/pg_operator.h"
 #include "catalog/pg_statistic_ext.h"
 #include "lib/stringinfo.h"
+#include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
-#include "optimizer/cost.h"
-#include "optimizer/var.h"
+#include "optimizer/optimizer.h"
 #include "nodes/nodes.h"
-#include "nodes/relation.h"
+#include "nodes/pathnodes.h"
 #include "statistics/extended_stats_internal.h"
 #include "statistics/statistics.h"
 #include "utils/bytea.h"
@@ -252,6 +252,9 @@ dependency_degree(int numrows, HeapTuple *rows, int k, AttrNumber *dependency,
 	 * (b) split the data into groups by first (k-1) columns
 	 *
 	 * (c) for each group count different values in the last column
+	 *
+	 * We use the column data types' default sort operators and collations;
+	 * perhaps at some point it'd be worth using column-specific collations?
 	 */
 
 	/* prepare the sort function for the first dimension, and SortItem array */
@@ -266,7 +269,7 @@ dependency_degree(int numrows, HeapTuple *rows, int k, AttrNumber *dependency,
 				 colstat->attrtypid);
 
 		/* prepare the sort function for this dimension */
-		multi_sort_add_dimension(mss, i, type->lt_opr);
+		multi_sort_add_dimension(mss, i, type->lt_opr, type->typcollation);
 
 		/* accumulate all the data for both columns into an array and sort it */
 		for (j = 0; j < numrows; j++)
@@ -395,7 +398,7 @@ statext_dependencies_build(int numrows, HeapTuple *rows, Bitmapset *attrs,
 			degree = dependency_degree(numrows, rows, k, dependency, stats, attrs);
 
 			/*
-			 * if the dependency seems entirely invalid, don't store it it
+			 * if the dependency seems entirely invalid, don't store it
 			 */
 			if (degree == 0.0)
 				continue;
@@ -799,7 +802,7 @@ dependency_is_compatible_clause(Node *clause, Index relid, AttrNumber *attnum)
 
 		/* OK to proceed with checking "var" */
 	}
-	else if (not_clause((Node *) rinfo->clause))
+	else if (is_notclause(rinfo->clause))
 	{
 		/*
 		 * "NOT x" can be interpreted as "x = false", so get the argument and

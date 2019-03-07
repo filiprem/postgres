@@ -224,6 +224,12 @@ my %pgdump_runs = (
 			"--file=$tempdir/pg_dumpall_dbprivs.sql",
 		],
 	},
+	pg_dumpall_exclude => {
+		dump_cmd => [
+			'pg_dumpall', '-v', "--file=$tempdir/pg_dumpall_exclude.sql",
+			'--exclude-database', '*dump_test*', '--no-sync',
+		],
+	},
 	no_blobs => {
 		dump_cmd => [
 			'pg_dump',                      '--no-sync',
@@ -322,13 +328,6 @@ my %pgdump_runs = (
 
 			'--schema=dump_test', '-b', '-B', '--no-sync', 'postgres',
 		],
-	},
-	with_oids => {
-		dump_cmd => [
-			'pg_dump',   '--oids',
-			'--no-sync', "--file=$tempdir/with_oids.sql",
-			'postgres',
-		],
 	},);
 
 ###############################################################
@@ -387,8 +386,8 @@ my %full_runs = (
 	no_owner                 => 1,
 	no_privs                 => 1,
 	pg_dumpall_dbprivs       => 1,
-	schema_only              => 1,
-	with_oids                => 1,);
+	pg_dumpall_exclude       => 1,
+	schema_only              => 1,);
 
 # This is where the actual tests are defined.
 my %tests = (
@@ -452,24 +451,25 @@ my %tests = (
 			pg_dumpall_dbprivs       => 1,
 			pg_dumpall_globals       => 1,
 			pg_dumpall_globals_clean => 1,
+			pg_dumpall_exclude       => 1,
 		},
 	},
 
 	'ALTER COLLATION test0 OWNER TO' => {
-		regexp    => qr/^ALTER COLLATION public.test0 OWNER TO .*;/m,
+		regexp    => qr/^\QALTER COLLATION public.test0 OWNER TO \E.+;/m,
 		collation => 1,
 		like      => { %full_runs, section_pre_data => 1, },
 		unlike    => { %dump_test_schema_runs, no_owner => 1, },
 	},
 
 	'ALTER FOREIGN DATA WRAPPER dummy OWNER TO' => {
-		regexp => qr/^ALTER FOREIGN DATA WRAPPER dummy OWNER TO .*;/m,
+		regexp => qr/^ALTER FOREIGN DATA WRAPPER dummy OWNER TO .+;/m,
 		like   => { %full_runs, section_pre_data => 1, },
 		unlike => { no_owner => 1, },
 	},
 
 	'ALTER SERVER s1 OWNER TO' => {
-		regexp => qr/^ALTER SERVER s1 OWNER TO .*;/m,
+		regexp => qr/^ALTER SERVER s1 OWNER TO .+;/m,
 		like   => { %full_runs, section_pre_data => 1, },
 		unlike => { no_owner => 1, },
 	},
@@ -478,7 +478,7 @@ my %tests = (
 		regexp => qr/^
 			\QALTER FUNCTION dump_test.pltestlang_call_handler() \E
 			\QOWNER TO \E
-			.*;/xm,
+			.+;/xm,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => {
@@ -491,7 +491,7 @@ my %tests = (
 		regexp => qr/^
 			\QALTER OPERATOR FAMILY dump_test.op_family USING btree \E
 			\QOWNER TO \E
-			.*;/xm,
+			.+;/xm,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => {
@@ -530,7 +530,7 @@ my %tests = (
 		regexp => qr/^
 			\QALTER OPERATOR CLASS dump_test.op_class USING btree \E
 			\QOWNER TO \E
-			.*;/xm,
+			.+;/xm,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => {
@@ -540,13 +540,13 @@ my %tests = (
 	},
 
 	'ALTER PUBLICATION pub1 OWNER TO' => {
-		regexp => qr/^ALTER PUBLICATION pub1 OWNER TO .*;/m,
+		regexp => qr/^ALTER PUBLICATION pub1 OWNER TO .+;/m,
 		like   => { %full_runs, section_post_data => 1, },
 		unlike => { no_owner => 1, },
 	},
 
 	'ALTER LARGE OBJECT ... OWNER TO' => {
-		regexp => qr/^ALTER LARGE OBJECT \d+ OWNER TO .*;/m,
+		regexp => qr/^ALTER LARGE OBJECT \d+ OWNER TO .+;/m,
 		like   => {
 			%full_runs,
 			column_inserts         => 1,
@@ -562,13 +562,13 @@ my %tests = (
 	},
 
 	'ALTER PROCEDURAL LANGUAGE pltestlang OWNER TO' => {
-		regexp => qr/^ALTER PROCEDURAL LANGUAGE pltestlang OWNER TO .*;/m,
+		regexp => qr/^ALTER PROCEDURAL LANGUAGE pltestlang OWNER TO .+;/m,
 		like   => { %full_runs, section_pre_data => 1, },
 		unlike => { no_owner => 1, },
 	},
 
 	'ALTER SCHEMA dump_test OWNER TO' => {
-		regexp => qr/^ALTER SCHEMA dump_test OWNER TO .*;/m,
+		regexp => qr/^ALTER SCHEMA dump_test OWNER TO .+;/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => {
@@ -578,7 +578,7 @@ my %tests = (
 	},
 
 	'ALTER SCHEMA dump_test_second_schema OWNER TO' => {
-		regexp => qr/^ALTER SCHEMA dump_test_second_schema OWNER TO .*;/m,
+		regexp => qr/^ALTER SCHEMA dump_test_second_schema OWNER TO .+;/m,
 		like   => {
 			%full_runs,
 			role             => 1,
@@ -600,17 +600,6 @@ my %tests = (
 		unlike => {
 			exclude_dump_test_schema => 1,
 			exclude_test_table       => 1,
-		},
-	},
-
-	'ALTER SEQUENCE test_third_table_col1_seq' => {
-		regexp => qr/^
-			\QALTER SEQUENCE dump_test_second_schema.test_third_table_col1_seq OWNED BY dump_test_second_schema.test_third_table.col1;\E
-			/xm,
-		like => {
-			%full_runs,
-			role             => 1,
-			section_pre_data => 1,
 		},
 	},
 
@@ -776,7 +765,7 @@ my %tests = (
 	},
 
 	'ALTER TABLE test_table OWNER TO' => {
-		regexp => qr/^ALTER TABLE dump_test.test_table OWNER TO .*;/m,
+		regexp => qr/^\QALTER TABLE dump_test.test_table OWNER TO \E.+;/m,
 		like   => {
 			%full_runs,
 			%dump_test_schema_runs,
@@ -795,7 +784,7 @@ my %tests = (
 		create_sql   => 'ALTER TABLE dump_test.test_table
 					   ENABLE ROW LEVEL SECURITY;',
 		regexp =>
-		  qr/^ALTER TABLE dump_test.test_table ENABLE ROW LEVEL SECURITY;/m,
+		  qr/^\QALTER TABLE dump_test.test_table ENABLE ROW LEVEL SECURITY;\E/m,
 		like => {
 			%full_runs,
 			%dump_test_schema_runs,
@@ -809,7 +798,7 @@ my %tests = (
 	},
 
 	'ALTER TABLE test_second_table OWNER TO' => {
-		regexp => qr/^ALTER TABLE dump_test.test_second_table OWNER TO .*;/m,
+		regexp => qr/^\QALTER TABLE dump_test.test_second_table OWNER TO \E.+;/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => {
@@ -818,19 +807,8 @@ my %tests = (
 		},
 	},
 
-	'ALTER TABLE test_third_table OWNER TO' => {
-		regexp =>
-		  qr/^ALTER TABLE dump_test_second_schema.test_third_table OWNER TO .*;/m,
-		like => {
-			%full_runs,
-			role             => 1,
-			section_pre_data => 1,
-		},
-		unlike => { no_owner => 1, },
-	},
-
 	'ALTER TABLE measurement OWNER TO' => {
-		regexp => qr/^ALTER TABLE dump_test.measurement OWNER TO .*;/m,
+		regexp => qr/^\QALTER TABLE dump_test.measurement OWNER TO \E.+;/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => {
@@ -841,7 +819,7 @@ my %tests = (
 
 	'ALTER TABLE measurement_y2006m2 OWNER TO' => {
 		regexp =>
-		  qr/^ALTER TABLE dump_test_second_schema.measurement_y2006m2 OWNER TO .*;/m,
+		  qr/^\QALTER TABLE dump_test_second_schema.measurement_y2006m2 OWNER TO \E.+;/m,
 		like => {
 			%full_runs,
 			role             => 1,
@@ -852,7 +830,7 @@ my %tests = (
 
 	'ALTER FOREIGN TABLE foreign_table OWNER TO' => {
 		regexp =>
-		  qr/^ALTER FOREIGN TABLE dump_test.foreign_table OWNER TO .*;/m,
+		  qr/^\QALTER FOREIGN TABLE dump_test.foreign_table OWNER TO \E.+;/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => {
@@ -863,7 +841,7 @@ my %tests = (
 
 	'ALTER TEXT SEARCH CONFIGURATION alt_ts_conf1 OWNER TO' => {
 		regexp =>
-		  qr/^ALTER TEXT SEARCH CONFIGURATION dump_test.alt_ts_conf1 OWNER TO .*;/m,
+		  qr/^\QALTER TEXT SEARCH CONFIGURATION dump_test.alt_ts_conf1 OWNER TO \E.+;/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => {
@@ -874,7 +852,7 @@ my %tests = (
 
 	'ALTER TEXT SEARCH DICTIONARY alt_ts_dict1 OWNER TO' => {
 		regexp =>
-		  qr/^ALTER TEXT SEARCH DICTIONARY dump_test.alt_ts_dict1 OWNER TO .*;/m,
+		  qr/^\QALTER TEXT SEARCH DICTIONARY dump_test.alt_ts_dict1 OWNER TO \E.+;/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => {
@@ -925,14 +903,14 @@ my %tests = (
 	},
 
 	'COMMENT ON DATABASE postgres' => {
-		regexp => qr/^COMMENT ON DATABASE postgres IS .*;/m,
+		regexp => qr/^COMMENT ON DATABASE postgres IS .+;/m,
 
 		# Should appear in the same tests as "CREATE DATABASE postgres"
 		like => { createdb => 1, },
 	},
 
 	'COMMENT ON EXTENSION plpgsql' => {
-		regexp => qr/^COMMENT ON EXTENSION plpgsql IS .*;/m,
+		regexp => qr/^COMMENT ON EXTENSION plpgsql IS .+;/m,
 
 		# this shouldn't ever get emitted anymore
 		like => {},
@@ -943,7 +921,7 @@ my %tests = (
 		create_sql   => 'COMMENT ON TABLE dump_test.test_table
 					   IS \'comment on table\';',
 		regexp =>
-		  qr/^COMMENT ON TABLE dump_test.test_table IS 'comment on table';/m,
+		  qr/^\QCOMMENT ON TABLE dump_test.test_table IS 'comment on table';\E/m,
 		like => {
 			%full_runs,
 			%dump_test_schema_runs,
@@ -1016,7 +994,7 @@ my %tests = (
 		create_sql   => 'COMMENT ON CONVERSION dump_test.test_conversion
 					   IS \'comment on test conversion\';',
 		regexp =>
-		  qr/^COMMENT ON CONVERSION dump_test.test_conversion IS 'comment on test conversion';/m,
+		  qr/^\QCOMMENT ON CONVERSION dump_test.test_conversion IS 'comment on test conversion';\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => { exclude_dump_test_schema => 1, },
@@ -1027,7 +1005,7 @@ my %tests = (
 		create_sql   => 'COMMENT ON COLLATION test0
 					   IS \'comment on test0 collation\';',
 		regexp =>
-		  qr/^COMMENT ON COLLATION public.test0 IS 'comment on test0 collation';/m,
+		  qr/^\QCOMMENT ON COLLATION public.test0 IS 'comment on test0 collation';\E/m,
 		collation => 1,
 		like      => { %full_runs, section_pre_data => 1, },
 	},
@@ -1081,7 +1059,7 @@ my %tests = (
 		  'COMMENT ON TEXT SEARCH CONFIGURATION dump_test.alt_ts_conf1
 					   IS \'comment on text search configuration\';',
 		regexp =>
-		  qr/^COMMENT ON TEXT SEARCH CONFIGURATION dump_test.alt_ts_conf1 IS 'comment on text search configuration';/m,
+		  qr/^\QCOMMENT ON TEXT SEARCH CONFIGURATION dump_test.alt_ts_conf1 IS 'comment on text search configuration';\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => { exclude_dump_test_schema => 1, },
@@ -1093,7 +1071,7 @@ my %tests = (
 		  'COMMENT ON TEXT SEARCH DICTIONARY dump_test.alt_ts_dict1
 					   IS \'comment on text search dictionary\';',
 		regexp =>
-		  qr/^COMMENT ON TEXT SEARCH DICTIONARY dump_test.alt_ts_dict1 IS 'comment on text search dictionary';/m,
+		  qr/^\QCOMMENT ON TEXT SEARCH DICTIONARY dump_test.alt_ts_dict1 IS 'comment on text search dictionary';\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => { exclude_dump_test_schema => 1, },
@@ -1104,7 +1082,7 @@ my %tests = (
 		create_sql   => 'COMMENT ON TEXT SEARCH PARSER dump_test.alt_ts_prs1
 					   IS \'comment on text search parser\';',
 		regexp =>
-		  qr/^COMMENT ON TEXT SEARCH PARSER dump_test.alt_ts_prs1 IS 'comment on text search parser';/m,
+		  qr/^\QCOMMENT ON TEXT SEARCH PARSER dump_test.alt_ts_prs1 IS 'comment on text search parser';\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => { exclude_dump_test_schema => 1, },
@@ -1115,7 +1093,7 @@ my %tests = (
 		create_sql => 'COMMENT ON TEXT SEARCH TEMPLATE dump_test.alt_ts_temp1
 					   IS \'comment on text search template\';',
 		regexp =>
-		  qr/^COMMENT ON TEXT SEARCH TEMPLATE dump_test.alt_ts_temp1 IS 'comment on text search template';/m,
+		  qr/^\QCOMMENT ON TEXT SEARCH TEMPLATE dump_test.alt_ts_temp1 IS 'comment on text search template';\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => { exclude_dump_test_schema => 1, },
@@ -1126,7 +1104,7 @@ my %tests = (
 		create_sql   => 'COMMENT ON TYPE dump_test.planets
 					   IS \'comment on enum type\';',
 		regexp =>
-		  qr/^COMMENT ON TYPE dump_test.planets IS 'comment on enum type';/m,
+		  qr/^\QCOMMENT ON TYPE dump_test.planets IS 'comment on enum type';\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => { exclude_dump_test_schema => 1, },
@@ -1137,7 +1115,7 @@ my %tests = (
 		create_sql   => 'COMMENT ON TYPE dump_test.textrange
 					   IS \'comment on range type\';',
 		regexp =>
-		  qr/^COMMENT ON TYPE dump_test.textrange IS 'comment on range type';/m,
+		  qr/^\QCOMMENT ON TYPE dump_test.textrange IS 'comment on range type';\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => { exclude_dump_test_schema => 1, },
@@ -1148,7 +1126,7 @@ my %tests = (
 		create_sql   => 'COMMENT ON TYPE dump_test.int42
 					   IS \'comment on regular type\';',
 		regexp =>
-		  qr/^COMMENT ON TYPE dump_test.int42 IS 'comment on regular type';/m,
+		  qr/^\QCOMMENT ON TYPE dump_test.int42 IS 'comment on regular type';\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => { exclude_dump_test_schema => 1, },
@@ -1159,7 +1137,7 @@ my %tests = (
 		create_sql   => 'COMMENT ON TYPE dump_test.undefined
 					   IS \'comment on undefined type\';',
 		regexp =>
-		  qr/^COMMENT ON TYPE dump_test.undefined IS 'comment on undefined type';/m,
+		  qr/^\QCOMMENT ON TYPE dump_test.undefined IS 'comment on undefined type';\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => { exclude_dump_test_schema => 1, },
@@ -1247,37 +1225,6 @@ my %tests = (
 		},
 	},
 
-	'COPY test_third_table' => {
-		create_order => 12,
-		create_sql =>
-		  'INSERT INTO dump_test_second_schema.test_third_table (col1) '
-		  . 'SELECT generate_series FROM generate_series(1,9);',
-		regexp => qr/^
-			\QCOPY dump_test_second_schema.test_third_table (col1) FROM stdin;\E
-			\n(?:\d\n){9}\\\.\n
-			/xm,
-		like => {
-			%full_runs,
-			data_only    => 1,
-			role         => 1,
-			section_data => 1,
-		},
-		unlike => {
-			binary_upgrade          => 1,
-			exclude_test_table_data => 1,
-			schema_only             => 1,
-			with_oids               => 1,
-		},
-	},
-
-	'COPY test_third_table WITH OIDS' => {
-		regexp => qr/^
-			\QCOPY dump_test_second_schema.test_third_table (col1) WITH OIDS FROM stdin;\E
-			\n(?:\d+\t\d\n){9}\\\.\n
-			/xm,
-		like => { with_oids => 1, },
-	},
-
 	'COPY test_fourth_table' => {
 		create_order => 7,
 		create_sql =>
@@ -1343,22 +1290,15 @@ my %tests = (
 
 	'INSERT INTO test_table' => {
 		regexp => qr/^
-			(?:INSERT\ INTO\ dump_test.test_table\ \(col1,\ col2,\ col3,\ col4\)\ VALUES\ \(\d,\ NULL,\ NULL,\ NULL\);\n){9}
+			(?:INSERT\ INTO\ dump_test\.test_table\ \(col1,\ col2,\ col3,\ col4\)\ VALUES\ \(\d,\ NULL,\ NULL,\ NULL\);\n){9}
 			/xm,
 		like => { column_inserts => 1, },
 	},
 
 	'INSERT INTO test_second_table' => {
 		regexp => qr/^
-			(?:INSERT\ INTO\ dump_test.test_second_table\ \(col1,\ col2\)
+			(?:INSERT\ INTO\ dump_test\.test_second_table\ \(col1,\ col2\)
 			   \ VALUES\ \(\d,\ '\d'\);\n){9}/xm,
-		like => { column_inserts => 1, },
-	},
-
-	'INSERT INTO test_third_table' => {
-		regexp => qr/^
-			(?:INSERT\ INTO\ dump_test_second_schema.test_third_table\ \(col1\)
-			   \ VALUES\ \(\d\);\n){9}/xm,
 		like => { column_inserts => 1, },
 	},
 
@@ -1386,6 +1326,7 @@ my %tests = (
 		regexp       => qr/^CREATE ROLE regress_dump_test_role;/m,
 		like         => {
 			pg_dumpall_dbprivs       => 1,
+			pg_dumpall_exclude       => 1,
 			pg_dumpall_globals       => 1,
 			pg_dumpall_globals_clean => 1,
 		},
@@ -1421,7 +1362,7 @@ my %tests = (
 	'CREATE DATABASE postgres' => {
 		regexp => qr/^
 			\QCREATE DATABASE postgres WITH TEMPLATE = template0 \E
-			.*;/xm,
+			.+;/xm,
 		like => { createdb => 1, },
 	},
 
@@ -1430,7 +1371,7 @@ my %tests = (
 		create_sql   => 'CREATE DATABASE dump_test;',
 		regexp       => qr/^
 			\QCREATE DATABASE dump_test WITH TEMPLATE = template0 \E
-			.*;/xm,
+			.+;/xm,
 		like => { pg_dumpall_dbprivs => 1, },
 	},
 
@@ -1589,15 +1530,30 @@ my %tests = (
 		unlike => { exclude_dump_test_schema => 1, },
 	},
 
+	'CREATE OPERATOR CLASS dump_test.op_class_empty' => {
+		create_order => 89,
+		create_sql   => 'CREATE OPERATOR CLASS dump_test.op_class_empty
+		                 FOR TYPE bigint USING btree FAMILY dump_test.op_family
+						 AS STORAGE bigint;',
+		regexp => qr/^
+			\QCREATE OPERATOR CLASS dump_test.op_class_empty\E\n\s+
+			\QFOR TYPE bigint USING btree FAMILY dump_test.op_family AS\E\n\s+
+			\QSTORAGE bigint;\E
+			/xm,
+		like =>
+		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
+		unlike => { exclude_dump_test_schema => 1, },
+	},
+
 	'CREATE EVENT TRIGGER test_event_trigger' => {
 		create_order => 33,
 		create_sql   => 'CREATE EVENT TRIGGER test_event_trigger
 					   ON ddl_command_start
-					   EXECUTE PROCEDURE dump_test.event_trigger_func();',
+					   EXECUTE FUNCTION dump_test.event_trigger_func();',
 		regexp => qr/^
 			\QCREATE EVENT TRIGGER test_event_trigger \E
 			\QON ddl_command_start\E
-			\n\s+\QEXECUTE PROCEDURE dump_test.event_trigger_func();\E
+			\n\s+\QEXECUTE FUNCTION dump_test.event_trigger_func();\E
 			/xm,
 		like => { %full_runs, section_post_data => 1, },
 	},
@@ -1607,11 +1563,11 @@ my %tests = (
 		create_sql   => 'CREATE TRIGGER test_trigger
 					   BEFORE INSERT ON dump_test.test_table
 					   FOR EACH ROW WHEN (NEW.col1 > 10)
-					   EXECUTE PROCEDURE dump_test.trigger_func();',
+					   EXECUTE FUNCTION dump_test.trigger_func();',
 		regexp => qr/^
 			\QCREATE TRIGGER test_trigger BEFORE INSERT ON dump_test.test_table \E
 			\QFOR EACH ROW WHEN ((new.col1 > 10)) \E
-			\QEXECUTE PROCEDURE dump_test.trigger_func();\E
+			\QEXECUTE FUNCTION dump_test.trigger_func();\E
 			/xm,
 		like => {
 			%full_runs,
@@ -1673,7 +1629,7 @@ my %tests = (
 	'CREATE TYPE dump_test.int42' => {
 		create_order => 39,
 		create_sql   => 'CREATE TYPE dump_test.int42;',
-		regexp       => qr/^CREATE TYPE dump_test.int42;/m,
+		regexp       => qr/^\QCREATE TYPE dump_test.int42;\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => { exclude_dump_test_schema => 1, },
@@ -1827,6 +1783,20 @@ my %tests = (
 		unlike => { exclude_dump_test_schema => 1, },
 	},
 
+	'CREATE FUNCTION ... SUPPORT' => {
+		create_order => 41,
+		create_sql =>
+		  'CREATE FUNCTION dump_test.func_with_support() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$ SUPPORT varchar_support;',
+		regexp => qr/^
+			\QCREATE FUNCTION dump_test.func_with_support() RETURNS integer\E
+			\n\s+\QLANGUAGE sql SUPPORT varchar_support\E
+			\n\s+AS\ \$\$\Q SELECT 1 \E\$\$;
+			/xm,
+		like =>
+		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
+		unlike => { exclude_dump_test_schema => 1, },
+	},
+
 	'CREATE PROCEDURE dump_test.ptest1' => {
 		create_order => 41,
 		create_sql   => 'CREATE PROCEDURE dump_test.ptest1(a int)
@@ -1885,7 +1855,7 @@ my %tests = (
 	'CREATE TYPE dump_test.undefined' => {
 		create_order => 39,
 		create_sql   => 'CREATE TYPE dump_test.undefined;',
-		regexp       => qr/^CREATE TYPE dump_test.undefined;/m,
+		regexp       => qr/^\QCREATE TYPE dump_test.undefined;\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => { exclude_dump_test_schema => 1, },
@@ -1936,9 +1906,9 @@ my %tests = (
 	'CREATE TRANSFORM FOR int' => {
 		create_order => 34,
 		create_sql =>
-		  'CREATE TRANSFORM FOR int LANGUAGE SQL (FROM SQL WITH FUNCTION varchar_transform(internal), TO SQL WITH FUNCTION int4recv(internal));',
+		  'CREATE TRANSFORM FOR int LANGUAGE SQL (FROM SQL WITH FUNCTION prsd_lextype(internal), TO SQL WITH FUNCTION int4recv(internal));',
 		regexp =>
-		  qr/CREATE TRANSFORM FOR integer LANGUAGE sql \(FROM SQL WITH FUNCTION pg_catalog\.varchar_transform\(internal\), TO SQL WITH FUNCTION pg_catalog\.int4recv\(internal\)\);/m,
+		  qr/CREATE TRANSFORM FOR integer LANGUAGE sql \(FROM SQL WITH FUNCTION pg_catalog\.prsd_lextype\(internal\), TO SQL WITH FUNCTION pg_catalog\.int4recv\(internal\)\);/m,
 		like => { %full_runs, section_pre_data => 1, },
 	},
 
@@ -2283,34 +2253,6 @@ my %tests = (
 		unlike => { exclude_dump_test_schema => 1, },
 	},
 
-	'CREATE UNLOGGED TABLE test_third_table WITH OIDS' => {
-		create_order => 11,
-		create_sql =>
-		  'CREATE UNLOGGED TABLE dump_test_second_schema.test_third_table (
-						   col1 serial
-					   ) WITH OIDS;',
-		regexp => qr/^
-			\QSET default_with_oids = true;\E\n\n
-			\Q--\E\n
-			(\Q-- TOC entry \E[0-9]+\ \(class\ 1259\ OID\ [0-9]+\)\n)?
-			\Q-- Name: test_third_table;\E.*\n
-			\Q--\E\n\n
-			\QCREATE UNLOGGED TABLE dump_test_second_schema.test_third_table (\E
-			\n\s+\Qcol1 integer NOT NULL\E
-			\n\);\n
-			/xm,
-		like => {
-			%full_runs,
-			role             => 1,
-			section_pre_data => 1,
-		},
-		unlike => {
-
-			# FIXME figure out why/how binary upgrade drops OIDs.
-			binary_upgrade => 1,
-		},
-	},
-
 	'CREATE TABLE measurement PARTITIONED BY' => {
 		create_order => 90,
 		create_sql   => 'CREATE TABLE dump_test.measurement (
@@ -2342,12 +2284,16 @@ my %tests = (
 		create_order => 91,
 		create_sql =>
 		  'CREATE TABLE dump_test_second_schema.measurement_y2006m2
-					   PARTITION OF dump_test.measurement FOR VALUES
-					   FROM (\'2006-02-01\') TO (\'2006-03-01\');',
+						PARTITION OF dump_test.measurement (
+							unitsales DEFAULT 0 CHECK (unitsales >= 0)
+						)
+						FOR VALUES FROM (\'2006-02-01\') TO (\'2006-03-01\');',
 		regexp => qr/^
 			\Q-- Name: measurement_y2006m2;\E.*\n
 			\Q--\E\n\n
-			\QCREATE TABLE dump_test_second_schema.measurement_y2006m2 PARTITION OF dump_test.measurement\E\n
+			\QCREATE TABLE dump_test_second_schema.measurement_y2006m2 PARTITION OF dump_test.measurement (\E\n
+			\s+\QCONSTRAINT measurement_y2006m2_unitsales_check CHECK ((unitsales >= 0))\E\n
+			\)\n
 			\QFOR VALUES FROM ('2006-02-01') TO ('2006-03-01');\E\n
 			/xm,
 		like => {
@@ -2420,6 +2366,28 @@ my %tests = (
 		unlike => { exclude_dump_test_schema => 1, },
 	},
 
+	'CREATE TABLE table_with_stats' => {
+		create_order => 98,
+		create_sql   => 'CREATE TABLE dump_test.table_index_stats (
+						   col1 int,
+						   col2 int,
+						   col3 int);
+						 CREATE INDEX index_with_stats
+						  ON dump_test.table_index_stats
+						  ((col1 + 1), col1, (col2 + 1), (col3 + 1));
+						 ALTER INDEX dump_test.index_with_stats
+						   ALTER COLUMN 1 SET STATISTICS 400;
+						 ALTER INDEX dump_test.index_with_stats
+						   ALTER COLUMN 3 SET STATISTICS 500;',
+		regexp => qr/^
+			\QALTER INDEX dump_test.index_with_stats ALTER COLUMN 1 SET STATISTICS 400;\E\n
+			\QALTER INDEX dump_test.index_with_stats ALTER COLUMN 3 SET STATISTICS 500;\E\n
+			/xms,
+		like =>
+			{ %full_runs, %dump_test_schema_runs, section_post_data => 1, },
+		unlike => { exclude_dump_test_schema => 1, },
+	},
+
 	'CREATE STATISTICS extended_stats_no_options' => {
 		create_order => 97,
 		create_sql   => 'CREATE STATISTICS dump_test.test_ext_stats_no_options
@@ -2463,38 +2431,6 @@ my %tests = (
 		unlike => { exclude_dump_test_schema => 1, },
 	},
 
-	'CREATE SEQUENCE test_third_table_col1_seq' => {
-		regexp => qr/^
-			\QCREATE SEQUENCE dump_test_second_schema.test_third_table_col1_seq\E
-			\n\s+\QAS integer\E
-			\n\s+\QSTART WITH 1\E
-			\n\s+\QINCREMENT BY 1\E
-			\n\s+\QNO MINVALUE\E
-			\n\s+\QNO MAXVALUE\E
-			\n\s+\QCACHE 1;\E
-			/xm,
-		like => {
-			%full_runs,
-			role             => 1,
-			section_pre_data => 1,
-		},
-	},
-
-	'CREATE UNIQUE INDEX test_third_table_idx ON test_third_table' => {
-		create_order => 13,
-		create_sql   => 'CREATE UNIQUE INDEX test_third_table_idx
-					   ON dump_test_second_schema.test_third_table (col1);',
-		regexp => qr/^
-			\QCREATE UNIQUE INDEX test_third_table_idx \E
-			\QON dump_test_second_schema.test_third_table USING btree (col1);\E
-			/xm,
-		like => {
-			%full_runs,
-			role              => 1,
-			section_post_data => 1,
-		},
-	},
-
 	'CREATE INDEX ON ONLY measurement' => {
 		create_order => 92,
 		create_sql =>
@@ -2515,10 +2451,10 @@ my %tests = (
 			no_owner                => 1,
 			only_dump_test_schema   => 1,
 			pg_dumpall_dbprivs      => 1,
+			pg_dumpall_exclude      => 1,
 			schema_only             => 1,
 			section_post_data       => 1,
 			test_schema_plus_blobs  => 1,
-			with_oids               => 1,
 		},
 		unlike => {
 			exclude_dump_test_schema => 1,
@@ -2586,10 +2522,10 @@ my %tests = (
 			no_privs                 => 1,
 			no_owner                 => 1,
 			pg_dumpall_dbprivs       => 1,
+			pg_dumpall_exclude       => 1,
 			role                     => 1,
 			schema_only              => 1,
 			section_post_data        => 1,
-			with_oids                => 1,
 		},
 		unlike => {
 			only_dump_test_schema    => 1,
@@ -2692,11 +2628,6 @@ my %tests = (
 		like   => { clean => 1, },
 	},
 
-	'DROP TABLE test_third_table' => {
-		regexp => qr/^DROP TABLE dump_test_second_schema\.test_third_table;/m,
-		like   => { clean => 1, },
-	},
-
 	'DROP EXTENSION IF EXISTS plpgsql' => {
 		regexp => qr/^DROP EXTENSION IF EXISTS plpgsql;/m,
 
@@ -2736,13 +2667,6 @@ my %tests = (
 		like   => { clean_if_exists => 1, },
 	},
 
-	'DROP TABLE IF EXISTS test_third_table' => {
-		regexp => qr/^
-			\QDROP TABLE IF EXISTS dump_test_second_schema.test_third_table;\E
-			/xm,
-		like => { clean_if_exists => 1, },
-	},
-
 	'DROP ROLE regress_dump_test_role' => {
 		regexp => qr/^
 			\QDROP ROLE regress_dump_test_role;\E
@@ -2752,7 +2676,7 @@ my %tests = (
 
 	'DROP ROLE pg_' => {
 		regexp => qr/^
-			\QDROP ROLE pg_\E.*;
+			\QDROP ROLE pg_\E.+;
 			/xm,
 
 		# this shouldn't ever get emitted anywhere
@@ -2871,7 +2795,7 @@ my %tests = (
 		create_sql   => 'GRANT SELECT ON TABLE dump_test.test_table
 						   TO regress_dump_test_role;',
 		regexp =>
-		  qr/^GRANT SELECT ON TABLE dump_test.test_table TO regress_dump_test_role;/m,
+		  qr/^\QGRANT SELECT ON TABLE dump_test.test_table TO regress_dump_test_role;\E/m,
 		like => {
 			%full_runs,
 			%dump_test_schema_runs,
@@ -2885,44 +2809,13 @@ my %tests = (
 		},
 	},
 
-	'GRANT SELECT ON TABLE test_third_table' => {
-		create_order => 19,
-		create_sql   => 'GRANT SELECT ON
-						   TABLE dump_test_second_schema.test_third_table
-						   TO regress_dump_test_role;',
-		regexp =>
-		  qr/^GRANT SELECT ON TABLE dump_test_second_schema.test_third_table TO regress_dump_test_role;/m,
-		like => {
-			%full_runs,
-			role             => 1,
-			section_pre_data => 1,
-		},
-		unlike => { no_privs => 1, },
-	},
-
-	'GRANT ALL ON SEQUENCE test_third_table_col1_seq' => {
-		create_order => 28,
-		create_sql   => 'GRANT ALL ON SEQUENCE
-						   dump_test_second_schema.test_third_table_col1_seq
-						   TO regress_dump_test_role;',
-		regexp => qr/^
-			\QGRANT ALL ON SEQUENCE dump_test_second_schema.test_third_table_col1_seq TO regress_dump_test_role;\E
-			/xm,
-		like => {
-			%full_runs,
-			role             => 1,
-			section_pre_data => 1,
-		},
-		unlike => { no_privs => 1, },
-	},
-
 	'GRANT SELECT ON TABLE measurement' => {
 		create_order => 91,
 		create_sql   => 'GRANT SELECT ON
 						   TABLE dump_test.measurement
 						   TO regress_dump_test_role;',
 		regexp =>
-		  qr/^GRANT SELECT ON TABLE dump_test.measurement TO regress_dump_test_role;/m,
+		  qr/^\QGRANT SELECT ON TABLE dump_test.measurement TO regress_dump_test_role;\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_pre_data => 1, },
 		unlike => {
@@ -2937,7 +2830,7 @@ my %tests = (
 						   TABLE dump_test_second_schema.measurement_y2006m2
 						   TO regress_dump_test_role;',
 		regexp =>
-		  qr/^GRANT SELECT ON TABLE dump_test_second_schema.measurement_y2006m2 TO regress_dump_test_role;/m,
+		  qr/^\QGRANT SELECT ON TABLE dump_test_second_schema.measurement_y2006m2 TO regress_dump_test_role;\E/m,
 		like => {
 			%full_runs,
 			role             => 1,
@@ -2964,9 +2857,9 @@ my %tests = (
 			data_only              => 1,
 			section_pre_data       => 1,
 			test_schema_plus_blobs => 1,
+			binary_upgrade => 1,
 		},
 		unlike => {
-			binary_upgrade => 1,
 			no_blobs       => 1,
 			no_privs       => 1,
 			schema_only    => 1,
@@ -3012,7 +2905,7 @@ my %tests = (
 						   procost,
 						   prorows,
 						   provariadic,
-						   protransform,
+						   prosupport,
 						   prokind,
 						   prosecdef,
 						   proleakproof,
@@ -3044,7 +2937,7 @@ my %tests = (
 		\QGRANT SELECT(procost) ON TABLE pg_catalog.pg_proc TO PUBLIC;\E\n.*
 		\QGRANT SELECT(prorows) ON TABLE pg_catalog.pg_proc TO PUBLIC;\E\n.*
 		\QGRANT SELECT(provariadic) ON TABLE pg_catalog.pg_proc TO PUBLIC;\E\n.*
-		\QGRANT SELECT(protransform) ON TABLE pg_catalog.pg_proc TO PUBLIC;\E\n.*
+		\QGRANT SELECT(prosupport) ON TABLE pg_catalog.pg_proc TO PUBLIC;\E\n.*
 		\QGRANT SELECT(prokind) ON TABLE pg_catalog.pg_proc TO PUBLIC;\E\n.*
 		\QGRANT SELECT(prosecdef) ON TABLE pg_catalog.pg_proc TO PUBLIC;\E\n.*
 		\QGRANT SELECT(proleakproof) ON TABLE pg_catalog.pg_proc TO PUBLIC;\E\n.*
@@ -3080,7 +2973,7 @@ my %tests = (
 	},
 
 	'REFRESH MATERIALIZED VIEW matview' => {
-		regexp => qr/^REFRESH MATERIALIZED VIEW dump_test.matview;/m,
+		regexp => qr/^\QREFRESH MATERIALIZED VIEW dump_test.matview;\E/m,
 		like =>
 		  { %full_runs, %dump_test_schema_runs, section_post_data => 1, },
 		unlike => {
@@ -3147,7 +3040,7 @@ my %tests = (
 		create_order => 45,
 		create_sql   => 'REVOKE SELECT ON TABLE pg_proc FROM public;',
 		regexp =>
-		  qr/^REVOKE SELECT ON TABLE pg_catalog.pg_proc FROM PUBLIC;/m,
+		  qr/^\QREVOKE SELECT ON TABLE pg_catalog.pg_proc FROM PUBLIC;\E/m,
 		like => { %full_runs, section_pre_data => 1, },
 		unlike => { no_privs => 1, },
 	},
@@ -3177,6 +3070,66 @@ my %tests = (
 		unlike => { no_privs => 1, },
 	},
 
+
+	'CREATE ACCESS METHOD regress_test_table_am' => {
+		create_order => 11,
+		create_sql   => 'CREATE ACCESS METHOD regress_table_am TYPE TABLE HANDLER heap_tableam_handler;',
+		regexp => qr/^
+			\QCREATE ACCESS METHOD regress_table_am TYPE TABLE HANDLER heap_tableam_handler;\E
+			\n/xm,
+		like => {
+			%full_runs,
+			section_pre_data	=> 1,
+		},
+	},
+
+	# It's a bit tricky to ensure that the proper SET of default table
+	# AM occurs. To achieve that we create a table with the standard
+	# AM, test AM, standard AM. That guarantees that there needs to be
+	# a SET interspersed.  Then use a regex that prevents interspersed
+	# SET ...; statements, followed by the exptected CREATE TABLE. Not
+	# pretty, but seems hard to do better in this framework.
+	'CREATE TABLE regress_pg_dump_table_am' => {
+		create_order => 12,
+		create_sql => '
+			CREATE TABLE dump_test.regress_pg_dump_table_am_0() USING heap;
+			CREATE TABLE dump_test.regress_pg_dump_table_am_1 (col1 int) USING regress_table_am;
+			CREATE TABLE dump_test.regress_pg_dump_table_am_2() USING heap;',
+		regexp => qr/^
+			\QSET default_table_access_method = regress_table_am;\E
+			(\n(?!SET[^;]+;)[^\n]*)*
+			\n\QCREATE TABLE dump_test.regress_pg_dump_table_am_1 (\E
+			\n\s+\Qcol1 integer\E
+			\n\);/xm,
+		like => {
+			%full_runs,
+			%dump_test_schema_runs,
+			section_pre_data => 1,
+		},
+		unlike => { exclude_dump_test_schema => 1},
+	},
+
+	'CREATE MATERIALIZED VIEW regress_pg_dump_matview_am' => {
+		create_order => 13,
+		create_sql => '
+			CREATE MATERIALIZED VIEW dump_test.regress_pg_dump_matview_am_0 USING heap AS SELECT 1;
+			CREATE MATERIALIZED VIEW dump_test.regress_pg_dump_matview_am_1
+				USING regress_table_am AS SELECT count(*) FROM pg_class;
+			CREATE MATERIALIZED VIEW dump_test.regress_pg_dump_matview_am_2 USING heap AS SELECT 1;',
+		regexp => qr/^
+			\QSET default_table_access_method = regress_table_am;\E
+			(\n(?!SET[^;]+;)[^\n]*)*
+			\QCREATE MATERIALIZED VIEW dump_test.regress_pg_dump_matview_am_1 AS\E
+			\n\s+\QSELECT count(*) AS count\E
+			\n\s+\QFROM pg_class\E
+			\n\s+\QWITH NO DATA;\E\n/xm,
+		like => {
+			%full_runs,
+			%dump_test_schema_runs,
+			section_pre_data => 1,
+		},
+		unlike => { exclude_dump_test_schema => 1},
+	}
 );
 
 #########################################

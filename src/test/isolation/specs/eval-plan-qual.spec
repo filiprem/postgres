@@ -92,15 +92,37 @@ step "updateforss"	{
 	UPDATE table_b SET value = 'newTableBValue' WHERE id = 1;
 }
 
+# these tests exercise EvalPlanQual with conditional InitPlans which
+# have not been executed prior to the EPQ
+
+step "updateforcip"	{
+	UPDATE table_a SET value = NULL WHERE id = 1;
+}
+
 # these tests exercise mark/restore during EPQ recheck, cf bug #15032
 
 step "selectjoinforupdate"	{
-	set enable_nestloop to 0;
-	set enable_hashjoin to 0;
-	set enable_seqscan to 0;
+	set local enable_nestloop to 0;
+	set local enable_hashjoin to 0;
+	set local enable_seqscan to 0;
 	explain (costs off)
 	select * from jointest a join jointest b on a.id=b.id for update;
 	select * from jointest a join jointest b on a.id=b.id for update;
+}
+
+# these tests exercise Result plan nodes participating in EPQ
+
+step "selectresultforupdate"	{
+	select * from (select 1 as x) ss1 join (select 7 as y) ss2 on true
+	  left join table_a a on a.id = x, jointest jt
+	  where jt.id = y;
+	explain (verbose, costs off)
+	select * from (select 1 as x) ss1 join (select 7 as y) ss2 on true
+	  left join table_a a on a.id = x, jointest jt
+	  where jt.id = y for update of jt, ss1, ss2;
+	select * from (select 1 as x) ss1 join (select 7 as y) ss2 on true
+	  left join table_a a on a.id = x, jointest jt
+	  where jt.id = y for update of jt, ss1, ss2;
 }
 
 
@@ -129,6 +151,13 @@ step "readforss"	{
 	FROM table_a ta
 	WHERE ta.id = 1 FOR UPDATE OF ta;
 }
+step "updateforcip2"	{
+	UPDATE table_a SET value = COALESCE(value, (SELECT text 'newValue')) WHERE id = 1;
+}
+step "updateforcip3"	{
+	WITH d(val) AS (SELECT text 'newValue' FROM generate_series(1,1))
+	UPDATE table_a SET value = COALESCE(value, (SELECT val FROM d)) WHERE id = 1;
+}
 step "wrtwcte"	{ UPDATE table_a SET value = 'tableAValue2' WHERE id = 1; }
 step "wrjt"	{ UPDATE jointest SET data = 42 WHERE id = 7; }
 step "c2"	{ COMMIT; }
@@ -137,6 +166,7 @@ session "s3"
 setup		{ BEGIN ISOLATION LEVEL READ COMMITTED; }
 step "read"	{ SELECT * FROM accounts ORDER BY accountid; }
 step "read_ext"	{ SELECT * FROM accounts_ext ORDER BY accountid; }
+step "read_a"	{ SELECT * FROM table_a ORDER BY id; }
 
 # this test exercises EvalPlanQual with a CTE, cf bug #14328
 step "readwcte"	{
@@ -171,6 +201,9 @@ permutation "wx2" "partiallock" "c2" "c1" "read"
 permutation "wx2" "lockwithvalues" "c2" "c1" "read"
 permutation "wx2_ext" "partiallock_ext" "c2" "c1" "read_ext"
 permutation "updateforss" "readforss" "c1" "c2"
+permutation "updateforcip" "updateforcip2" "c1" "c2" "read_a"
+permutation "updateforcip" "updateforcip3" "c1" "c2" "read_a"
 permutation "wrtwcte" "readwcte" "c1" "c2"
 permutation "wrjt" "selectjoinforupdate" "c2" "c1"
+permutation "wrjt" "selectresultforupdate" "c2" "c1"
 permutation "wrtwcte" "multireadwcte" "c1" "c2"

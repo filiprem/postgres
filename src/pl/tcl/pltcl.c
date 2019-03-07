@@ -307,8 +307,6 @@ static int pltcl_SPI_prepare(ClientData cdata, Tcl_Interp *interp,
 				  int objc, Tcl_Obj *const objv[]);
 static int pltcl_SPI_execute_plan(ClientData cdata, Tcl_Interp *interp,
 					   int objc, Tcl_Obj *const objv[]);
-static int pltcl_SPI_lastoid(ClientData cdata, Tcl_Interp *interp,
-				  int objc, Tcl_Obj *const objv[]);
 static int pltcl_subtransaction(ClientData cdata, Tcl_Interp *interp,
 					 int objc, Tcl_Obj *const objv[]);
 static int pltcl_commit(ClientData cdata, Tcl_Interp *interp,
@@ -523,8 +521,6 @@ pltcl_init_interp(pltcl_interp_desc *interp_desc, Oid prolang, bool pltrusted)
 						 pltcl_SPI_prepare, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "spi_execp",
 						 pltcl_SPI_execute_plan, NULL, NULL);
-	Tcl_CreateObjCommand(interp, "spi_lastoid",
-						 pltcl_SPI_lastoid, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "subtransaction",
 						 pltcl_subtransaction, NULL, NULL);
 	Tcl_CreateObjCommand(interp, "commit",
@@ -591,6 +587,7 @@ pltcl_fetch_interp(Oid prolang, bool pltrusted)
 static void
 call_pltcl_start_proc(Oid prolang, bool pltrusted)
 {
+	LOCAL_FCINFO(fcinfo, 0);
 	char	   *start_proc;
 	const char *gucname;
 	ErrorContextCallback errcallback;
@@ -601,7 +598,6 @@ call_pltcl_start_proc(Oid prolang, bool pltrusted)
 	Form_pg_proc procStruct;
 	AclResult	aclresult;
 	FmgrInfo	finfo;
-	FunctionCallInfoData fcinfo;
 	PgStat_FunctionCallUsage fcusage;
 
 	/* select appropriate GUC */
@@ -614,7 +610,7 @@ call_pltcl_start_proc(Oid prolang, bool pltrusted)
 
 	/* Set up errcontext callback to make errors more helpful */
 	errcallback.callback = start_proc_error_callback;
-	errcallback.arg = (void *) gucname;
+	errcallback.arg = unconstify(char *, gucname);
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
@@ -662,11 +658,11 @@ call_pltcl_start_proc(Oid prolang, bool pltrusted)
 	 */
 	InvokeFunctionExecuteHook(procOid);
 	fmgr_info(procOid, &finfo);
-	InitFunctionCallInfoData(fcinfo, &finfo,
+	InitFunctionCallInfoData(*fcinfo, &finfo,
 							 0,
 							 InvalidOid, NULL, NULL);
-	pgstat_init_function_usage(&fcinfo, &fcusage);
-	(void) FunctionCallInvoke(&fcinfo);
+	pgstat_init_function_usage(fcinfo, &fcusage);
+	(void) FunctionCallInvoke(fcinfo);
 	pgstat_end_function_usage(&fcusage, true);
 
 	/* Pop the error context stack */
@@ -873,7 +869,7 @@ pltcl_func_handler(PG_FUNCTION_ARGS, pltcl_call_state *call_state,
 				/**************************************************
 				 * For tuple values, add a list for 'array set ...'
 				 **************************************************/
-				if (fcinfo->argnull[i])
+				if (fcinfo->args[i].isnull)
 					Tcl_ListObjAppendElement(NULL, tcl_cmd, Tcl_NewObj());
 				else
 				{
@@ -884,7 +880,7 @@ pltcl_func_handler(PG_FUNCTION_ARGS, pltcl_call_state *call_state,
 					HeapTupleData tmptup;
 					Tcl_Obj    *list_tmp;
 
-					td = DatumGetHeapTupleHeader(fcinfo->arg[i]);
+					td = DatumGetHeapTupleHeader(fcinfo->args[i].value);
 					/* Extract rowtype info and find a tupdesc */
 					tupType = HeapTupleHeaderGetTypeId(td);
 					tupTypmod = HeapTupleHeaderGetTypMod(td);
@@ -905,14 +901,14 @@ pltcl_func_handler(PG_FUNCTION_ARGS, pltcl_call_state *call_state,
 				 * Single values are added as string element
 				 * of their external representation
 				 **************************************************/
-				if (fcinfo->argnull[i])
+				if (fcinfo->args[i].isnull)
 					Tcl_ListObjAppendElement(NULL, tcl_cmd, Tcl_NewObj());
 				else
 				{
 					char	   *tmp;
 
 					tmp = OutputFunctionCall(&prodesc->arg_out_func[i],
-											 fcinfo->arg[i]);
+											 fcinfo->args[i].value);
 					UTF_BEGIN;
 					Tcl_ListObjAppendElement(NULL, tcl_cmd,
 											 Tcl_NewStringObj(UTF_E2U(tmp), -1));
@@ -2874,28 +2870,6 @@ pltcl_SPI_execute_plan(ClientData cdata, Tcl_Interp *interp,
 
 
 /**********************************************************************
- * pltcl_SPI_lastoid()	- return the last oid. To
- *		  be used after insert queries
- **********************************************************************/
-static int
-pltcl_SPI_lastoid(ClientData cdata, Tcl_Interp *interp,
-				  int objc, Tcl_Obj *const objv[])
-{
-	/*
-	 * Check call syntax
-	 */
-	if (objc != 1)
-	{
-		Tcl_WrongNumArgs(interp, 1, objv, "");
-		return TCL_ERROR;
-	}
-
-	Tcl_SetObjResult(interp, Tcl_NewWideIntObj(SPI_lastoid));
-	return TCL_OK;
-}
-
-
-/**********************************************************************
  * pltcl_subtransaction()	- Execute some Tcl code in a subtransaction
  *
  * The subtransaction is aborted if the Tcl code fragment returns TCL_ERROR,
@@ -3107,7 +3081,7 @@ pltcl_set_tuple_values(Tcl_Interp *interp, const char *arrayname,
 		else
 			Tcl_UnsetVar2(interp, *arrptr, *nameptr, 0);
 
-		pfree((char *) attname);
+		pfree(unconstify(char *, attname));
 	}
 }
 

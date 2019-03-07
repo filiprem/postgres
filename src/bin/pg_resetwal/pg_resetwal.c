@@ -20,7 +20,7 @@
  * step 2 ...
  *
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/bin/pg_resetwal/pg_resetwal.c
@@ -728,6 +728,7 @@ GuessControlValues(void)
 	ControlFile.wal_log_hints = false;
 	ControlFile.track_commit_timestamp = false;
 	ControlFile.MaxConnections = 100;
+	ControlFile.max_wal_senders = 10;
 	ControlFile.max_worker_processes = 8;
 	ControlFile.max_prepared_xacts = 0;
 	ControlFile.max_locks_per_xact = 64;
@@ -955,6 +956,7 @@ RewriteControlFile(void)
 	ControlFile.wal_log_hints = false;
 	ControlFile.track_commit_timestamp = false;
 	ControlFile.MaxConnections = 100;
+	ControlFile.max_wal_senders = 10;
 	ControlFile.max_worker_processes = 8;
 	ControlFile.max_prepared_xacts = 0;
 	ControlFile.max_locks_per_xact = 64;
@@ -1209,7 +1211,7 @@ KillExistingArchiveStatus(void)
 static void
 WriteEmptyXLOG(void)
 {
-	char	   *buffer;
+	PGAlignedXLogBlock buffer;
 	XLogPageHeader page;
 	XLogLongPageHeader longpage;
 	XLogRecord *record;
@@ -1219,12 +1221,10 @@ WriteEmptyXLOG(void)
 	int			nbytes;
 	char	   *recptr;
 
-	/* Use malloc() to ensure buffer is MAXALIGNED */
-	buffer = (char *) pg_malloc(XLOG_BLCKSZ);
-	page = (XLogPageHeader) buffer;
-	memset(buffer, 0, XLOG_BLCKSZ);
+	memset(buffer.data, 0, XLOG_BLCKSZ);
 
 	/* Set up the XLOG page header */
+	page = (XLogPageHeader) buffer.data;
 	page->xlp_magic = XLOG_PAGE_MAGIC;
 	page->xlp_info = XLP_LONG_HEADER;
 	page->xlp_tli = ControlFile.checkPointCopy.ThisTimeLineID;
@@ -1271,7 +1271,7 @@ WriteEmptyXLOG(void)
 	}
 
 	errno = 0;
-	if (write(fd, buffer, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+	if (write(fd, buffer.data, XLOG_BLCKSZ) != XLOG_BLCKSZ)
 	{
 		/* if write didn't set errno, assume problem is no disk space */
 		if (errno == 0)
@@ -1282,11 +1282,11 @@ WriteEmptyXLOG(void)
 	}
 
 	/* Fill the rest of the file with zeroes */
-	memset(buffer, 0, XLOG_BLCKSZ);
+	memset(buffer.data, 0, XLOG_BLCKSZ);
 	for (nbytes = XLOG_BLCKSZ; nbytes < WalSegSz; nbytes += XLOG_BLCKSZ)
 	{
 		errno = 0;
-		if (write(fd, buffer, XLOG_BLCKSZ) != XLOG_BLCKSZ)
+		if (write(fd, buffer.data, XLOG_BLCKSZ) != XLOG_BLCKSZ)
 		{
 			if (errno == 0)
 				errno = ENOSPC;
@@ -1327,5 +1327,5 @@ usage(void)
 	printf(_("  -x, --next-transaction-id=XID  set next transaction ID\n"));
 	printf(_("      --wal-segsize=SIZE         size of WAL segments, in megabytes\n"));
 	printf(_("  -?, --help                     show this help, then exit\n"));
-	printf(_("\nReport bugs to <pgsql-bugs@postgresql.org>.\n"));
+	printf(_("\nReport bugs to <pgsql-bugs@lists.postgresql.org>.\n"));
 }

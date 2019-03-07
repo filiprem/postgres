@@ -3,7 +3,7 @@
  *
  *	Definitions for the PostgreSQL statistics collector daemon.
  *
- *	Copyright (c) 2001-2018, PostgreSQL Global Development Group
+ *	Copyright (c) 2001-2019, PostgreSQL Global Development Group
  *
  *	src/include/pgstat.h
  * ----------
@@ -759,8 +759,8 @@ typedef enum
 	WAIT_EVENT_BGWRITER_HIBERNATE,
 	WAIT_EVENT_BGWRITER_MAIN,
 	WAIT_EVENT_CHECKPOINTER_MAIN,
-	WAIT_EVENT_LOGICAL_LAUNCHER_MAIN,
 	WAIT_EVENT_LOGICAL_APPLY_MAIN,
+	WAIT_EVENT_LOGICAL_LAUNCHER_MAIN,
 	WAIT_EVENT_PGSTAT_MAIN,
 	WAIT_EVENT_RECOVERY_WAL_ALL,
 	WAIT_EVENT_RECOVERY_WAL_STREAM,
@@ -802,6 +802,7 @@ typedef enum
 	WAIT_EVENT_BGWORKER_SHUTDOWN = PG_WAIT_IPC,
 	WAIT_EVENT_BGWORKER_STARTUP,
 	WAIT_EVENT_BTREE_PAGE,
+	WAIT_EVENT_CLOG_GROUP_UPDATE,
 	WAIT_EVENT_EXECUTE_GATHER,
 	WAIT_EVENT_HASH_BATCH_ALLOCATING,
 	WAIT_EVENT_HASH_BATCH_ELECTING,
@@ -810,25 +811,25 @@ typedef enum
 	WAIT_EVENT_HASH_BUILD_ELECTING,
 	WAIT_EVENT_HASH_BUILD_HASHING_INNER,
 	WAIT_EVENT_HASH_BUILD_HASHING_OUTER,
+	WAIT_EVENT_HASH_GROW_BATCHES_ALLOCATING,
+	WAIT_EVENT_HASH_GROW_BATCHES_DECIDING,
 	WAIT_EVENT_HASH_GROW_BATCHES_ELECTING,
 	WAIT_EVENT_HASH_GROW_BATCHES_FINISHING,
 	WAIT_EVENT_HASH_GROW_BATCHES_REPARTITIONING,
-	WAIT_EVENT_HASH_GROW_BATCHES_ALLOCATING,
-	WAIT_EVENT_HASH_GROW_BATCHES_DECIDING,
+	WAIT_EVENT_HASH_GROW_BUCKETS_ALLOCATING,
 	WAIT_EVENT_HASH_GROW_BUCKETS_ELECTING,
 	WAIT_EVENT_HASH_GROW_BUCKETS_REINSERTING,
-	WAIT_EVENT_HASH_GROW_BUCKETS_ALLOCATING,
 	WAIT_EVENT_LOGICAL_SYNC_DATA,
 	WAIT_EVENT_LOGICAL_SYNC_STATE_CHANGE,
 	WAIT_EVENT_MQ_INTERNAL,
 	WAIT_EVENT_MQ_PUT_MESSAGE,
 	WAIT_EVENT_MQ_RECEIVE,
 	WAIT_EVENT_MQ_SEND,
-	WAIT_EVENT_PARALLEL_FINISH,
 	WAIT_EVENT_PARALLEL_BITMAP_SCAN,
 	WAIT_EVENT_PARALLEL_CREATE_INDEX_SCAN,
+	WAIT_EVENT_PARALLEL_FINISH,
 	WAIT_EVENT_PROCARRAY_GROUP_UPDATE,
-	WAIT_EVENT_CLOG_GROUP_UPDATE,
+	WAIT_EVENT_PROMOTE,
 	WAIT_EVENT_REPLICATION_ORIGIN_DROP,
 	WAIT_EVENT_REPLICATION_SLOT_DROP,
 	WAIT_EVENT_SAFE_SNAPSHOT,
@@ -949,15 +950,25 @@ typedef enum ProgressCommandType
  *
  * For each backend, we keep the SSL status in a separate struct, that
  * is only filled in if SSL is enabled.
+ *
+ * All char arrays must be null-terminated.
  */
 typedef struct PgBackendSSLStatus
 {
 	/* Information about SSL connection */
 	int			ssl_bits;
 	bool		ssl_compression;
-	char		ssl_version[NAMEDATALEN];	/* MUST be null-terminated */
-	char		ssl_cipher[NAMEDATALEN];	/* MUST be null-terminated */
-	char		ssl_clientdn[NAMEDATALEN];	/* MUST be null-terminated */
+	char		ssl_version[NAMEDATALEN];
+	char		ssl_cipher[NAMEDATALEN];
+	char		ssl_client_dn[NAMEDATALEN];
+
+	/*
+	 * serial number is max "20 octets" per RFC 5280, so this size should be
+	 * fine
+	 */
+	char		ssl_client_serial[NAMEDATALEN];
+
+	char		ssl_issuer_dn[NAMEDATALEN];
 } PgBackendSSLStatus;
 
 
@@ -1320,7 +1331,7 @@ extern void pgstat_count_heap_delete(Relation rel);
 extern void pgstat_count_truncate(Relation rel);
 extern void pgstat_update_heap_dead_tuples(Relation rel, int delta);
 
-extern void pgstat_init_function_usage(FunctionCallInfoData *fcinfo,
+extern void pgstat_init_function_usage(FunctionCallInfo fcinfo,
 						   PgStat_FunctionCallUsage *fcu);
 extern void pgstat_end_function_usage(PgStat_FunctionCallUsage *fcu,
 						  bool finalize);

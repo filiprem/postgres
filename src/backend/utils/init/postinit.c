@@ -3,7 +3,7 @@
  * postinit.c
  *	  postgres initialization utilities
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "access/genam.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/session.h"
@@ -60,7 +61,6 @@
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/timeout.h"
-#include "utils/tqual.h"
 
 
 static HeapTuple GetDatabaseTuple(const char *dbname);
@@ -112,7 +112,7 @@ GetDatabaseTuple(const char *dbname)
 	 * built the critical shared relcache entries (i.e., we're starting up
 	 * without a shared relcache cache file).
 	 */
-	relation = heap_open(DatabaseRelationId, AccessShareLock);
+	relation = table_open(DatabaseRelationId, AccessShareLock);
 	scan = systable_beginscan(relation, DatabaseNameIndexId,
 							  criticalSharedRelcachesBuilt,
 							  NULL,
@@ -126,7 +126,7 @@ GetDatabaseTuple(const char *dbname)
 
 	/* all done */
 	systable_endscan(scan);
-	heap_close(relation, AccessShareLock);
+	table_close(relation, AccessShareLock);
 
 	return tuple;
 }
@@ -146,7 +146,7 @@ GetDatabaseTupleByOid(Oid dboid)
 	 * form a scan key
 	 */
 	ScanKeyInit(&key[0],
-				ObjectIdAttributeNumber,
+				Anum_pg_database_oid,
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(dboid));
 
@@ -155,7 +155,7 @@ GetDatabaseTupleByOid(Oid dboid)
 	 * built the critical shared relcache entries (i.e., we're starting up
 	 * without a shared relcache cache file).
 	 */
-	relation = heap_open(DatabaseRelationId, AccessShareLock);
+	relation = table_open(DatabaseRelationId, AccessShareLock);
 	scan = systable_beginscan(relation, DatabaseOidIndexId,
 							  criticalSharedRelcachesBuilt,
 							  NULL,
@@ -169,7 +169,7 @@ GetDatabaseTupleByOid(Oid dboid)
 
 	/* all done */
 	systable_endscan(scan);
-	heap_close(relation, AccessShareLock);
+	table_close(relation, AccessShareLock);
 
 	return tuple;
 }
@@ -249,34 +249,56 @@ PerformAuthentication(Port *port)
 #ifdef USE_SSL
 			if (port->ssl_in_use)
 				ereport(LOG,
-						(errmsg("replication connection authorized: user=%s SSL enabled (protocol=%s, cipher=%s, bits=%d, compression=%s)",
-								port->user_name,
-								be_tls_get_version(port),
-								be_tls_get_cipher(port),
-								be_tls_get_cipher_bits(port),
-								be_tls_get_compression(port) ? _("on") : _("off"))));
+						(port->application_name != NULL
+						 ? errmsg("replication connection authorized: user=%s application_name=%s SSL enabled (protocol=%s, cipher=%s, bits=%d, compression=%s)",
+								  port->user_name,
+								  port->application_name,
+								  be_tls_get_version(port),
+								  be_tls_get_cipher(port),
+								  be_tls_get_cipher_bits(port),
+								  be_tls_get_compression(port) ? _("on") : _("off"))
+						 : errmsg("replication connection authorized: user=%s SSL enabled (protocol=%s, cipher=%s, bits=%d, compression=%s)",
+								  port->user_name,
+								  be_tls_get_version(port),
+								  be_tls_get_cipher(port),
+								  be_tls_get_cipher_bits(port),
+								  be_tls_get_compression(port) ? _("on") : _("off"))));
 			else
 #endif
 				ereport(LOG,
-						(errmsg("replication connection authorized: user=%s",
-								port->user_name)));
+						(port->application_name != NULL
+						 ? errmsg("replication connection authorized: user=%s application_name=%s",
+								  port->user_name,
+								  port->application_name)
+						 : errmsg("replication connection authorized: user=%s",
+								  port->user_name)));
 		}
 		else
 		{
 #ifdef USE_SSL
 			if (port->ssl_in_use)
 				ereport(LOG,
-						(errmsg("connection authorized: user=%s database=%s SSL enabled (protocol=%s, cipher=%s, bits=%d, compression=%s)",
-								port->user_name, port->database_name,
-								be_tls_get_version(port),
-								be_tls_get_cipher(port),
-								be_tls_get_cipher_bits(port),
-								be_tls_get_compression(port) ? _("on") : _("off"))));
+						(port->application_name != NULL
+						 ? errmsg("connection authorized: user=%s database=%s application_name=%s SSL enabled (protocol=%s, cipher=%s, bits=%d, compression=%s)",
+								  port->user_name, port->database_name, port->application_name,
+								  be_tls_get_version(port),
+								  be_tls_get_cipher(port),
+								  be_tls_get_cipher_bits(port),
+								  be_tls_get_compression(port) ? _("on") : _("off"))
+						 : errmsg("connection authorized: user=%s database=%s SSL enabled (protocol=%s, cipher=%s, bits=%d, compression=%s)",
+								  port->user_name, port->database_name,
+								  be_tls_get_version(port),
+								  be_tls_get_cipher(port),
+								  be_tls_get_cipher_bits(port),
+								  be_tls_get_compression(port) ? _("on") : _("off"))));
 			else
 #endif
 				ereport(LOG,
-						(errmsg("connection authorized: user=%s database=%s",
-								port->user_name, port->database_name)));
+						(port->application_name != NULL
+						 ? errmsg("connection authorized: user=%s database=%s application_name=%s",
+								  port->user_name, port->database_name, port->application_name)
+						 : errmsg("connection authorized: user=%s database=%s",
+								  port->user_name, port->database_name)));
 		}
 	}
 
@@ -505,7 +527,7 @@ InitializeMaxBackends(void)
 
 	/* the extra unit accounts for the autovacuum launcher */
 	MaxBackends = MaxConnections + autovacuum_max_workers + 1 +
-		max_worker_processes;
+		max_worker_processes + max_wal_senders;
 
 	/* internal error because the values were all checked previously */
 	if (MaxBackends > MAX_BACKENDS)
@@ -789,12 +811,11 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	}
 
 	/*
-	 * The last few connection slots are reserved for superusers.  Although
-	 * replication connections currently require superuser privileges, we
-	 * don't allow them to consume the reserved slots, which are intended for
-	 * interactive use.
+	 * The last few connection slots are reserved for superusers.  Replication
+	 * connections are drawn from slots reserved with max_wal_senders and not
+	 * limited by max_connections or superuser_reserved_connections.
 	 */
-	if ((!am_superuser || am_walsender) &&
+	if (!am_superuser && !am_walsender &&
 		ReservedBackends > 0 &&
 		!HaveNFreeProcs(ReservedBackends))
 		ereport(FATAL,
@@ -863,7 +884,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 					(errcode(ERRCODE_UNDEFINED_DATABASE),
 					 errmsg("database \"%s\" does not exist", in_dbname)));
 		dbform = (Form_pg_database) GETSTRUCT(tuple);
-		MyDatabaseId = HeapTupleGetOid(tuple);
+		MyDatabaseId = dbform->oid;
 		MyDatabaseTableSpace = dbform->dattablespace;
 		/* take database name from the caller, just for paranoia */
 		strlcpy(dbname, in_dbname, sizeof(dbname));
@@ -880,7 +901,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 					(errcode(ERRCODE_UNDEFINED_DATABASE),
 					 errmsg("database %u does not exist", dboid)));
 		dbform = (Form_pg_database) GETSTRUCT(tuple);
-		MyDatabaseId = HeapTupleGetOid(tuple);
+		MyDatabaseId = dbform->oid;
 		MyDatabaseTableSpace = dbform->dattablespace;
 		Assert(MyDatabaseId == dboid);
 		strlcpy(dbname, NameStr(dbform->datname), sizeof(dbname));
@@ -962,7 +983,7 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 
 		tuple = GetDatabaseTuple(dbname);
 		if (!HeapTupleIsValid(tuple) ||
-			MyDatabaseId != HeapTupleGetOid(tuple) ||
+			MyDatabaseId != ((Form_pg_database) GETSTRUCT(tuple))->oid ||
 			MyDatabaseTableSpace != ((Form_pg_database) GETSTRUCT(tuple))->dattablespace)
 			ereport(FATAL,
 					(errcode(ERRCODE_UNDEFINED_DATABASE),
@@ -1135,7 +1156,7 @@ process_settings(Oid databaseid, Oid roleid)
 	if (!IsUnderPostmaster)
 		return;
 
-	relsetting = heap_open(DbRoleSettingRelationId, AccessShareLock);
+	relsetting = table_open(DbRoleSettingRelationId, AccessShareLock);
 
 	/* read all the settings under the same snapshot for efficiency */
 	snapshot = RegisterSnapshot(GetCatalogSnapshot(DbRoleSettingRelationId));
@@ -1147,7 +1168,7 @@ process_settings(Oid databaseid, Oid roleid)
 	ApplySetting(snapshot, InvalidOid, InvalidOid, relsetting, PGC_S_GLOBAL);
 
 	UnregisterSnapshot(snapshot);
-	heap_close(relsetting, AccessShareLock);
+	table_close(relsetting, AccessShareLock);
 }
 
 /*
@@ -1227,13 +1248,13 @@ ThereIsAtLeastOneRole(void)
 	HeapScanDesc scan;
 	bool		result;
 
-	pg_authid_rel = heap_open(AuthIdRelationId, AccessShareLock);
+	pg_authid_rel = table_open(AuthIdRelationId, AccessShareLock);
 
 	scan = heap_beginscan_catalog(pg_authid_rel, 0, NULL);
 	result = (heap_getnext(scan, ForwardScanDirection) != NULL);
 
 	heap_endscan(scan);
-	heap_close(pg_authid_rel, AccessShareLock);
+	table_close(pg_authid_rel, AccessShareLock);
 
 	return result;
 }
