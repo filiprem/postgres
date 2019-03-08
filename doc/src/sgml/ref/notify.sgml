@@ -21,7 +21,14 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
+NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable class="parameter">payload</replaceable> ] [ [ WITH ] ( option [, ...] ) ]
+
 NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable class="parameter">payload</replaceable> [ , <replaceable class="parameter">send_mode</replaceable> ] ]
+
+where option can be one of:
+
+COLLAPSE [ boolean ]
+
 </synopsis>
  </refsynopsisdiv>
 

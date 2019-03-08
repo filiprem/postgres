@@ -49,14 +49,14 @@
  * 4. The NOTIFY statement (routine Async_Notify) stores the notification in
  *	  a backend-local list which will not be processed until transaction end.
  *
- *	  In the default send_mode ('unique'), duplicate notifications from the
+ *	  By default (COLLAPSE on), duplicate notifications from the
  *	  same transaction are sent out as one notification only. This is done to
  *	  save work when for example a trigger on a 2 million row table fires a
  *	  notification for each row that has been changed. If the application needs
  *	  to receive every single notification that has been sent, it can easily
  *	  add some unique string into the extra payload parameter.
  *
- *	  If send_mode is 'all', de-duplication is not performed.
+ *	  If COLLAPSE off, de-duplication is not performed.
  *
  *	  When the transaction is ready to commit, PreCommit_Notify() adds the
  *	  pending notifications to the head of the queue. The head pointer of the
