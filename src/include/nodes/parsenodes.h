@@ -2945,19 +2945,13 @@ typedef struct RuleStmt
 /* ----------------------
  *		Notify Statement
  * ----------------------
-typedef enum NotifySendMode
-{
-   NOTIFY_SEND_UNIQUE,
-   NOTIFY_SEND_ALL
-} NotifySendMode;
  */
-
 typedef struct NotifyStmt
 {
-	NodeTag			type;
-	char			*channel;	/* channel name to notify */
-	char			*payload;	/* the payload string, or NULL if none */
-	NotifySendMode	send_mode;	/* Send mode */
+	NodeTag		 type;
+	char		*channel;	/* channel name to notify */
+	char		*payload;	/* the payload string, or NULL if none */
+	List		*options;	/* List of DefElem nodes */
 } NotifyStmt;
 
 /* ----------------------

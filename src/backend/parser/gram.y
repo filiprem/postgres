@@ -524,8 +524,12 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <boolean> opt_varying opt_timezone opt_no_inherit
 
 %type <ival>	Iconst SignedIconst
-%type <str>		Sconst comment_text notify_payload
-%type <boolean> notify_send_mode
+%type <str>		Sconst comment_text
+%type <str>		notify_option_name
+%type <node>	notify_option_arg
+%type <defelt>	notify_option_elem
+%type <list>	notify_option_list
+
 %type <str>		RoleId opt_boolean_or_string
 %type <list>	var_list
 %type <str>		ColId ColLabel var_name type_function_name param_name
@@ -9744,37 +9748,65 @@ opt_instead:
 
 NotifyStmt:
 		NOTIFY ColId
-		{
-			NotifyStmt *n = makeNode(NotifyStmt);
-			n->channel = $2;
-			n->payload = NULL;
-			n->send_mode = NOTIFY_SEND_UNIQUE;
-			$$ = (Node *)n;
-		}
-		| NOTIFY ColId notify_payload
-		{
-			NotifyStmt *n = makeNode(NotifyStmt);
-			n->channel = $2;
-			n->payload = $3;
-			n->send_mode = NOTIFY_SEND_UNIQUE;
-			$$ = (Node *)n;
-		}
-		| NOTIFY ColId notify_payload notify_send_mode
-		{
-			NotifyStmt *n = makeNode(NotifyStmt);
-			n->channel = $2;
-			n->payload = $3;
-			n->send_mode = $4;
-			$$ = (Node *)n;
-		}
+			{
+				NotifyStmt *n = makeNode(NotifyStmt);
+				n->options = NIL;
+				n->channel = $2;
+				n->payload = NULL;
+				$$ = (Node *)n;
+			}
+		| NOTIFY '(' notify_option_list ')' ColId
+			{
+				NotifyStmt *n = makeNode(NotifyStmt);
+				n->options = $3;
+				n->channel = $5;
+				n->payload = NULL;
+				$$ = (Node *)n;
+			}
+		| NOTIFY ColId ',' Sconst
+			{
+				NotifyStmt *n = makeNode(NotifyStmt);
+				n->options = NIL;
+				n->channel = $2;
+				n->payload = $4;
+				$$ = (Node *)n;
+			}
+		| NOTIFY '(' notify_option_list ')' ColId ',' Sconst
+			{
+				NotifyStmt *n = makeNode(NotifyStmt);
+				n->options = $3;
+				n->channel = $5;
+				n->payload = $7;
+				$$ = (Node *)n;
+			}
 		;
 
-notify_payload:
-			',' Sconst							{ $$ = $2; }
+notify_option_list:
+			notify_option_elem
+				{
+					$$ = list_make1($1);
+				}
+			| notify_option_list ',' notify_option_elem
+				{
+					$$ = lappend($1, $3);
+				}
 		;
 
-notify_send_mode:
-			',' opt_boolean_or_string 			{ $$ = $2; }
+notify_option_elem:
+			notify_option_name notify_option_arg
+				{
+					$$ = makeDefElem($1, $2, @1);
+				}
+		;
+
+notify_option_name:
+			NonReservedWord			{ $$ = $1; }
+		;
+
+notify_option_arg:
+			opt_boolean_or_string		{ $$ = (Node *) makeString($1); }
+			| NumericOnly				{ $$ = (Node *) $1; }
+			| /* EMPTY */				{ $$ = NULL; }
 		;
 
 ListenStmt: LISTEN ColId

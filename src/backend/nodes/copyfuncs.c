@@ -3625,7 +3625,7 @@ _copyNotifyStmt(const NotifyStmt *from)
 
 	COPY_STRING_FIELD(channel);
 	COPY_STRING_FIELD(payload);
-	COPY_SCALAR_FIELD(send_mode);
+	COPY_NODE_FIELD(options);
 
 	return newnode;
 }

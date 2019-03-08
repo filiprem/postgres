@@ -538,10 +538,9 @@ pg_notify(PG_FUNCTION_ARGS)
 Datum
 pg_notify_mode(PG_FUNCTION_ARGS)
 {
-	const char *channel;
-	const char *payload;
-	const char *p_send_mode;
-	NotifySendMode send_mode;
+	const char		*channel;
+	const char		*payload;
+	bool			 collapse;
 
 	if (PG_ARGISNULL(0))
 		channel = "";
@@ -554,22 +553,14 @@ pg_notify_mode(PG_FUNCTION_ARGS)
 		payload = text_to_cstring(PG_GETARG_TEXT_PP(1));
 
 	if (PG_ARGISNULL(2))
-	{
-		send_mode = NOTIFY_SEND_UNIQUE;
-	}
+		collapse = true;
 	else
-	{
-		p_send_mode = text_to_cstring(PG_GETARG_TEXT_PP(2));
-		if (strcmp(p_send_mode, "all") == 0)
-			send_mode = NOTIFY_SEND_ALL;
-		else
-			send_mode = NOTIFY_SEND_UNIQUE;
-	}
+		collapse = PG_GETARG_BOOL(2);
 
 	/* For NOTIFY as a statement, this is checked in ProcessUtility */
 	PreventCommandDuringRecovery("NOTIFY");
 
-	Async_Notify(channel, payload, send_mode);
+	Async_Notify(channel, payload, collapse);
 
 	PG_RETURN_VOID();
 }
@@ -585,10 +576,10 @@ pg_notify_mode(PG_FUNCTION_ARGS)
  *		^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
  */
 void
-Async_Notify(const char *channel, const char *payload, NotifySendMode send_mode)
+Async_Notify(const char *channel, const char *payload, bool collapse)
 {
-	Notification *n;
-	MemoryContext oldcontext;
+	Notification	*n;
+	MemoryContext	 oldcontext;
 
 	if (IsParallelWorker())
 		elog(ERROR, "cannot send notifications from a parallel worker");
@@ -615,7 +606,22 @@ Async_Notify(const char *channel, const char *payload, NotifySendMode send_mode)
 					 errmsg("payload string too long")));
 	}
 
-	if (send_mode == NOTIFY_SEND_UNIQUE)
+//	/* Parse options list. */
+//	collapse = true;
+//	foreach(lc, stmt->options)
+//	{
+//		DefElem    *opt = (DefElem *) lfirst(lc);
+//
+//		if (strcmp(opt->defname, "collapse") == 0)
+//			collapse = defGetBoolean(opt);
+//		else
+//			ereport(ERROR,
+//					(errcode(ERRCODE_SYNTAX_ERROR),
+//					 errmsg("unrecognized NOTIFY option \"%s\"",
+//						 opt->defname)));
+//	}
+
+	if (collapse)
 		/* remove duplicate entries in the list */
 		if (AsyncExistsPendingNotify(channel, payload))
 			return;

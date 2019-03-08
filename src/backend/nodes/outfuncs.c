@@ -2663,7 +2663,7 @@ _outNotifyStmt(StringInfo str, const NotifyStmt *node)
 
 	WRITE_STRING_FIELD(channel);
 	WRITE_STRING_FIELD(payload);
-	WRITE_ENUM_FIELD(send_mode, NotifySendMode);
+	WRITE_NODE_FIELD(options);
 }
 
 static void

@@ -298,7 +298,7 @@ _readNotifyStmt(void)
 
 	READ_STRING_FIELD(channel);
 	READ_STRING_FIELD(payload);
-	READ_ENUM_FIELD(send_mode, NotifySendMode);
+	READ_NODE_FIELD(options);
 
 	READ_DONE();
 }

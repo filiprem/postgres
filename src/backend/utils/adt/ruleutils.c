@@ -6586,8 +6586,6 @@ get_utility_query_def(Query *query, deparse_context *context)
 		{
 			appendStringInfoString(buf, ", ");
 			simple_quote_literal(buf, stmt->payload);
-			appendStringInfo(buf, ", '%s'",
-					(stmt->send_mode == NOTIFY_SEND_ALL ? "all" : "unique"));
 		}
 	}
 	else

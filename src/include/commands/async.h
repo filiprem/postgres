@@ -16,17 +16,12 @@
 #include <signal.h>
 
 #include "fmgr.h"
+#include "nodes/parsenodes.h"
 
 /*
  * The number of SLRU page buffers we use for the notification queue.
  */
 #define NUM_ASYNC_BUFFERS	8
-
-typedef enum NotifySendMode
-{
-	NOTIFY_SEND_UNIQUE,
-	NOTIFY_SEND_ALL
-} NotifySendMode;
 
 extern bool Trace_notify;
 extern volatile sig_atomic_t notifyInterruptPending;
@@ -39,7 +34,7 @@ extern void NotifyMyFrontEnd(const char *channel,
 				 int32 srcPid);
 
 /* notify-related SQL statements */
-extern void Async_Notify(const char *channel, const char *payload, NotifySendMode send_mode);
+extern void Async_Notify(const char *channel, const char *payload, bool collapse);
 extern void Async_Listen(const char *channel);
 extern void Async_Unlisten(const char *channel);
 extern void Async_UnlistenAll(void);
