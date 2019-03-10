@@ -4876,7 +4876,7 @@ add_guc_variable(struct config_generic *var, int elevel)
  * Create and add a placeholder variable for a custom variable name.
  */
 static struct config_generic *
-add_placeholder_variable(const char *name, int elevel, config_type vartype)
+add_placeholder_variable(const char *name, int elevel, enum config_type type)
 {
 	size_t		sz = sizeof(struct config_string) + sizeof(char *);
 	struct config_string *var;
@@ -4900,7 +4900,7 @@ add_placeholder_variable(const char *name, int elevel, config_type vartype)
 	gen->short_desc = "GUC placeholder variable";
 	//gen->flags = GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE | GUC_CUSTOM_PLACEHOLDER;
 	gen->flags = GUC_NOT_IN_SAMPLE | GUC_CUSTOM_PLACEHOLDER;
-	gen->vartype = vartype;
+	gen->vartype = type;
 
 	/*
 	 * The char* is allocated at the end of the struct since we have no
