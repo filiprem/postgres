@@ -2970,7 +2970,7 @@ CountOtherDBBackends(Oid databaseId, int *nbackends, int *nprepared, bool force_
 #ifdef HAVE_SETSID
 							kill(-(proc->pid), SIGTERM);
 #else
-							kill(proc->pid, SIGTERM)
+							kill(proc->pid, SIGTERM);
 #endif
 					}
 				}

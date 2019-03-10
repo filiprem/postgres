@@ -874,7 +874,7 @@ dropdb(const char *dbname, bool missing_ok, bool force)
 		/*
 		 * CountOtherDBBackends check usage of database by other backends and try
 		 * to wait 5 sec. We try to raise warning after 1 minute and and raise
-		 * a error after 5 minutes.
+		 * error after 5 minutes.
 		 */
 		if (!CountOtherDBBackends(db_id, &notherbackends, &npreparedxacts, force))
 			break;
@@ -886,7 +886,7 @@ dropdb(const char *dbname, bool missing_ok, bool force)
 					   dbname),
 					 errdetail_busy_db(notherbackends, npreparedxacts)));
 
-		/* without "force" flag raise exception immediately, or after 5 minutes */
+		/* without "force" flag raise error immediately, or after 5 minutes */
 		if (!force || loops % 60 == 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_OBJECT_IN_USE),

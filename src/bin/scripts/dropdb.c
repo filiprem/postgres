@@ -15,10 +15,6 @@
 #include "fe_utils/string_utils.h"
 
 
-/* Time to sleep after isuing SIGTERM to backends */
-#define TERMINATE_SLEEP_TIME 1
-
-
 static void help(const char *progname);
 
 
