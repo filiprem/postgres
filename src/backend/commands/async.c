@@ -125,6 +125,7 @@
 #include "access/xact.h"
 #include "catalog/pg_database.h"
 #include "commands/async.h"
+#include "commands/defrem.h"
 #include "funcapi.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
@@ -637,8 +638,6 @@ void
 Async_Notify_WithOptions(const char *channel,
 		const char *payload, List *options)
 {
-	Notification	*n;
-	MemoryContext	 oldcontext;
 	ListCell		*lc;
 
 	bool			 collapse;
