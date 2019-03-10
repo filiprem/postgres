@@ -587,7 +587,7 @@ Async_Notify(const char *channel, const char *payload, bool collapse)
 	if (Trace_notify)
 		elog(DEBUG1, "Async_Notify(%s)", channel);
 
-	/* a channel name must be specified */
+	/* channel name must be specified */
 	if (!channel || !strlen(channel))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -605,21 +605,6 @@ Async_Notify(const char *channel, const char *payload, bool collapse)
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 					 errmsg("payload string too long")));
 	}
-
-//	/* Parse options list. */
-//	collapse = true;
-//	foreach(lc, stmt->options)
-//	{
-//		DefElem    *opt = (DefElem *) lfirst(lc);
-//
-//		if (strcmp(opt->defname, "collapse") == 0)
-//			collapse = defGetBoolean(opt);
-//		else
-//			ereport(ERROR,
-//					(errcode(ERRCODE_SYNTAX_ERROR),
-//					 errmsg("unrecognized NOTIFY option \"%s\"",
-//						 opt->defname)));
-//	}
 
 	if (collapse)
 		/* remove duplicate entries in the list */
@@ -646,6 +631,34 @@ Async_Notify(const char *channel, const char *payload, bool collapse)
 	pendingNotifies = lappend(pendingNotifies, n);
 
 	MemoryContextSwitchTo(oldcontext);
+}
+
+void
+Async_Notify_WithOptions(const char *channel,
+		const char *payload, List *options)
+{
+	Notification	*n;
+	MemoryContext	 oldcontext;
+	ListCell		*lc;
+
+	bool			 collapse;
+
+	collapse = true;
+
+	/* Parse options list. */
+	foreach(lc, options)
+	{
+		DefElem *opt = (DefElem *) lfirst(lc);
+
+		if (strcmp(opt->defname, "collapse") == 0)
+			collapse = defGetBoolean(opt);
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("unrecognized NOTIFY option \"%s\"",
+							opt->defname)));
+	}
+	Async_Notify(channel, payload, collapse);
 }
 
 /*

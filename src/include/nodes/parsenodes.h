@@ -2948,10 +2948,10 @@ typedef struct RuleStmt
  */
 typedef struct NotifyStmt
 {
-	NodeTag		 type;
-	char		*channel;	/* channel name to notify */
-	char		*payload;	/* the payload string, or NULL if none */
-	List		*options;	/* List of DefElem nodes */
+	NodeTag	 type;
+	char	*channel;	/* channel name to notify */
+	char	*payload;	/* the payload string, or NULL if none */
+	List	*options;	/* List of DefElem nodes */
 } NotifyStmt;
 
 /* ----------------------

@@ -9750,9 +9750,17 @@ NotifyStmt:
 		NOTIFY ColId
 			{
 				NotifyStmt *n = makeNode(NotifyStmt);
-				n->options = NIL;
 				n->channel = $2;
 				n->payload = NULL;
+				n->options = NIL;
+				$$ = (Node *)n;
+			}
+		| NOTIFY ColId ',' Sconst
+			{
+				NotifyStmt *n = makeNode(NotifyStmt);
+				n->channel = $2;
+				n->payload = $4;
+				n->options = NIL;
 				$$ = (Node *)n;
 			}
 		| NOTIFY '(' notify_option_list ')' ColId
@@ -9761,14 +9769,6 @@ NotifyStmt:
 				n->options = $3;
 				n->channel = $5;
 				n->payload = NULL;
-				$$ = (Node *)n;
-			}
-		| NOTIFY ColId ',' Sconst
-			{
-				NotifyStmt *n = makeNode(NotifyStmt);
-				n->options = NIL;
-				n->channel = $2;
-				n->payload = $4;
 				$$ = (Node *)n;
 			}
 		| NOTIFY '(' notify_option_list ')' ColId ',' Sconst

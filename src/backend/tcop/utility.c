@@ -611,7 +611,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 				NotifyStmt *stmt = (NotifyStmt *) parsetree;
 
 				PreventCommandDuringRecovery("NOTIFY");
-				Async_Notify(stmt->channel, stmt->payload, stmt->options);
+				Async_Notify_WithOptions(stmt->channel, stmt->payload, stmt->options);
 			}
 			break;
 

@@ -21,14 +21,11 @@ PostgreSQL documentation
 
  <refsynopsisdiv>
 <synopsis>
-NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable class="parameter">payload</replaceable> ] [ [ WITH ] ( option [, ...] ) ]
+NOTIFY [ ( option [, ...] ) ] <replaceable class="parameter">channel</replaceable> [ , <replaceable class="parameter">payload</replaceable> ]
 
-NOTIFY <replaceable class="parameter">channel</replaceable> [ , <replaceable class="parameter">payload</replaceable> [ , <replaceable class="parameter">send_mode</replaceable> ] ]
-
-where option can be one of:
+<phrase>where <replaceable class="parameter">option</replaceable> can be one of:</phrase>
 
 COLLAPSE [ boolean ]
-
 </synopsis>
  </refsynopsisdiv>
 
@@ -147,19 +144,17 @@ COLLAPSE [ boolean ]
     </listitem>
    </varlistentry>
    <varlistentry>
-    <term><replaceable class="parameter">send_mode</replaceable></term>
+    <term><replaceable class="parameter">collapse</replaceable></term>
     <listitem>
      <para>
-      Controls collapsing of repeated messages. Can be either
-      <literal>'unique'</literal> (the default) or <literal>'all'</literal>.
+      Controls collapsing of repeated messages.
 
-      When set to <literal>'unique'</literal>, notification will be skipped if
+      When set to <literal>true</literal>, notification will be skipped if
       the same channel was already signaled with identical payload in the same
       transaction block (finished with <literal>COMMIT</literal>,
       <literal>END</literal> or <literal>SAVEPOINT</literal>).
       
-      When set to <literal>'all'</literal>, duplicates will not be collapsed.
-
+      When set to <literal>false</literal>, duplicates will not be collapsed.
      </para>
     </listitem>
    </varlistentry>
@@ -209,10 +204,9 @@ COLLAPSE [ boolean ]
    <para>
     There is a three-argument version,
     <literal><function>pg_notify</function>(<type>text</type>,
-    <type>text</type>, <type>text</type>)</literal>. The third argument
-    corresponds to the <replaceable
-    class="parameter">send_mode</replaceable> parameter of the
-    <literal>NOTIFY</literal> command. 
+    <type>text</type>, <type>boolean</type>)</literal>. The third argument
+    corresponds to the <replaceable class="parameter">COLLAPSE</replaceable>
+    option of the <literal>NOTIFY</literal> command. 
    </para>
   </refsect2>
  </refsect1>
@@ -236,13 +230,13 @@ SELECT pg_notify('fo' || 'o', 'pay' || 'load');
 Asynchronous notification "foo" with payload "payload" received from server process with PID 14728.
 
 /* Identical messages from same (sub-) transaction will be eliminated,
-   unless you use send_mode = 'all' */
+   unless you use COLLAPSE off */
 LISTEN bar;
 BEGIN;
 NOTIFY bar, 'Coffee please';
 NOTIFY bar, 'Coffee please';
 NOTIFY bar, 'Milk please';
-NOTIFY bar, 'Milk please', 'off';
+NOTIFY (COLLAPSE off) bar, 'Milk please';
 SAVEPOINT s;
 NOTIFY bar, 'Coffee please';
 COMMIT;
