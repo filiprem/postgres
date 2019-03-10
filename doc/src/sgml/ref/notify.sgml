@@ -144,17 +144,17 @@ COLLAPSE [ boolean ]
     </listitem>
    </varlistentry>
    <varlistentry>
-    <term><replaceable class="parameter">collapse</replaceable></term>
+    <term><replaceable class="parameter">COLLAPSE</replaceable></term>
     <listitem>
      <para>
       Controls collapsing of repeated messages.
 
-      When set to <literal>true</literal>, notification will be skipped if
+      When set to <literal>on</literal>, notification will be skipped if
       the same channel was already signaled with identical payload in the same
       transaction block (finished with <literal>COMMIT</literal>,
       <literal>END</literal> or <literal>SAVEPOINT</literal>).
       
-      When set to <literal>false</literal>, duplicates will not be collapsed.
+      When set to <literal>off</literal>, duplicates will not be collapsed.
      </para>
     </listitem>
    </varlistentry>
