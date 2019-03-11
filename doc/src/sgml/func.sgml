@@ -18679,6 +18679,22 @@ SELECT collation for ('foo' COLLATE "de_DE");
       <row>
        <entry>
         <indexterm>
+         <primary>pg_set_param</primary>
+        </indexterm>
+		<literal><function>pg_set_param(<parameter>name</parameter>,
+		<parameter>setting</parameter>, <parameter>vartype</parameter>,
+		<parameter>min_val</parameter>, <parameter>max_val</parameter>,
+		<parameter>enumvals</parameter>, <parameter>reset_val</parameter>,
+		<parameter>no_show_all</parameter>,
+		<parameter>is_local</parameter>)</function></literal>
+       </entry>
+       <entry><type>text</type></entry>
+       <entry>Set or create a parameter and return new value</entry>
+      </row>
+
+      <row>
+       <entry>
+        <indexterm>
          <primary>current_setting</primary>
         </indexterm>
         <literal><function>current_setting(<parameter>setting_name</parameter> [, <parameter>missing_ok</parameter> ])</function></literal>

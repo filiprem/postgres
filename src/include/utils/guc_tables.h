@@ -16,18 +16,6 @@
 
 #include "utils/guc.h"
 
-/*
- * GUC supports these types of variables:
- */
-enum config_type
-{
-	PGC_BOOL,
-	PGC_INT,
-	PGC_REAL,
-	PGC_STRING,
-	PGC_ENUM
-};
-
 union config_var_val
 {
 	bool		boolval;
@@ -153,7 +141,7 @@ struct config_generic
 	const char *long_desc;		/* long desc. of this variable's purpose */
 	int			flags;			/* flag bits, see guc.h */
 	/* variable fields, initialized at runtime: */
-	enum config_type vartype;	/* type of variable (set only at startup) */
+	GucVarType	vartype;		/* type of variable (set only at startup) */
 	int			status;			/* status bits, see below */
 	GucSource	source;			/* source of the current actual value */
 	GucSource	reset_source;	/* source of the reset_value */
@@ -257,6 +245,7 @@ extern const char *const config_group_names[];
 extern const char *const config_type_names[];
 extern const char *const GucContext_Names[];
 extern const char *const GucSource_Names[];
+extern const char *const GucVarType_Names[];
 
 /* get the current set of variables */
 extern struct config_generic **get_guc_variables(void);

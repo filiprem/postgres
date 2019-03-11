@@ -5698,7 +5698,6 @@
 { oid => '2076', descr => 'convert bitstring to int8',
   proname => 'int8', prorettype => 'int8', proargtypes => 'bit',
   prosrc => 'bittoint8' },
-
 { oid => '2077', descr => 'SHOW X as a function',
   proname => 'current_setting', provolatile => 's', prorettype => 'text',
   proargtypes => 'text', prosrc => 'show_config_by_name' },
@@ -5717,6 +5716,10 @@
   proargmodes => '{o,o,o,o,o,o,o,o,o,o,o,o,o,o,o,o,o}',
   proargnames => '{name,setting,unit,category,short_desc,extra_desc,context,vartype,source,min_val,max_val,enumvals,boot_val,reset_val,sourcefile,sourceline,pending_restart}',
   prosrc => 'show_all_settings' },
+{ oid => '2121', descr => 'SET (options) X as a function',
+  proname => 'pg_set_param', proisstrict => 'f', provolatile => 'v',
+  proparallel => 'u', prorettype => 'text', proargtypes => 'text text text text text text text text bool',
+  prosrc => 'set_config_with_options' },
 { oid => '3329', descr => 'show config file settings',
   proname => 'pg_show_all_file_settings', prorows => '1000', proretset => 't',
   provolatile => 'v', prorettype => 'record', proargtypes => '',

@@ -121,6 +121,18 @@ typedef enum
 } GucSource;
 
 /*
+ * GUC supports these types of variables:
+ */
+typedef enum
+{
+	PGC_BOOL,
+	PGC_INT,
+	PGC_REAL,
+	PGC_STRING,
+	PGC_ENUM
+} GucVarType;
+
+/*
  * Parsing the configuration file(s) will return a list of name-value pairs
  * with source location info.  We also abuse this data structure to carry
  * error reports about the config files.  An entry reporting an error will
@@ -278,6 +290,16 @@ extern bool trace_sort;
  */
 extern void SetConfigOption(const char *name, const char *value,
 				GucContext context, GucSource source);
+
+extern void DefineCustomVariable(
+						 const char *name,
+						 GucVarType vartype,
+						 const char *short_desc,
+						 const char *long_desc,
+						 bool *valueAddr,
+						 bool bootValue,
+						 GucContext context,
+						 int flags);
 
 extern void DefineCustomBoolVariable(
 						 const char *name,

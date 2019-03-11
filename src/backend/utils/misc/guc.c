@@ -624,6 +624,18 @@ const char *const GucSource_Names[] =
 };
 
 /*
+ * Displayable names for variable types (enum GucVarType)
+ */
+const char *const GucVarType_Names[] =
+{
+	/* PGC_BOOL */ "boolean",
+	/* PGC_INT */ "numeric",
+	/* PGC_REAL */ "numeric",
+	/* PGC_STRING */ "string",
+	/* PGC_ENUM */ "enum"
+};
+
+/*
  * Displayable names for the groupings defined in enum config_group
  */
 const char *const config_group_names[] =
@@ -4876,7 +4888,7 @@ add_guc_variable(struct config_generic *var, int elevel)
  * Create and add a placeholder variable for a custom variable name.
  */
 static struct config_generic *
-add_placeholder_variable(const char *name, int elevel, enum config_type type)
+add_placeholder_variable(const char *name, int elevel, GucVarType type)
 {
 	size_t		sz = sizeof(struct config_string) + sizeof(char *);
 	struct config_string *var;
@@ -8023,6 +8035,67 @@ SetPGVariable(const char *name, List *args, bool is_local)
 /*
  * SET command wrapped as a SQL callable function.
  */
+
+// new function
+Datum
+set_config_with_options(PG_FUNCTION_ARGS)
+{
+	char	   *name;
+	char	   *value;
+	char	   *new_value;
+	bool		is_local;
+	char	   *type;
+	GucVarType	vartype;
+
+	if (PG_ARGISNULL(0))
+		ereport(ERROR,
+				(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+				 errmsg("SET requires parameter name")));
+
+	/* Get the GUC variable name */
+	name = TextDatumGetCString(PG_GETARG_DATUM(0));
+
+	/* Get the desired value or set to NULL for a reset request */
+	if (PG_ARGISNULL(1))
+		value = NULL;
+	else
+		value = TextDatumGetCString(PG_GETARG_DATUM(1));
+
+	/*
+	 * Get the desired state of is_local. Default to false if provided value
+	 * is NULL
+	 */
+	if (PG_ARGISNULL(2))
+		is_local = false;
+	else
+		is_local = PG_GETARG_BOOL(2);
+
+	/*
+	 * Get variable type (bool, int, real, string, enum).
+	 */
+	if (PG_ARGISNULL(3))
+		vartype = PGC_STRING;
+	else
+		type = TextDatumGetCString(PG_GETARG_DATUM(3));
+
+	/* Note SET DEFAULT (argstring == NULL) is equivalent to RESET */
+	(void) set_config_option(name,
+							 value,
+							 (superuser() ? PGC_SUSET : PGC_USERSET),
+							 PGC_S_SESSION,
+							 is_local ? GUC_ACTION_LOCAL : GUC_ACTION_SET,
+							 true, 0, false);
+
+	/* get the new current value */
+	new_value = GetConfigOptionByName(name, NULL, false);
+
+	/* Convert return string to text */
+	PG_RETURN_TEXT_P(cstring_to_text(new_value));
+}
+
+
+////
+//
 Datum
 set_config_by_name(PG_FUNCTION_ARGS)
 {
@@ -8080,7 +8153,7 @@ init_custom_variable(const char *name,
 					 const char *long_desc,
 					 GucContext context,
 					 int flags,
-					 enum config_type type,
+					 GucVarType type,
 					 size_t sz)
 {
 	struct config_generic *gen;
