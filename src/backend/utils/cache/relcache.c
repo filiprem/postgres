@@ -30,7 +30,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include "access/hash.h"
 #include "access/htup_details.h"
 #include "access/multixact.h"
 #include "access/nbtree.h"
@@ -1681,7 +1680,7 @@ InitTableAmRoutine(Relation relation)
 }
 
 /*
- * Initialize table access method support for a table like relation relation
+ * Initialize table access method support for a table like relation
  */
 void
 RelationInitTableAccessMethod(Relation relation)
