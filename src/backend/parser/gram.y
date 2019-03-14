@@ -466,6 +466,10 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <vsetstmt> generic_set set_rest set_rest_more generic_reset reset_rest
 				 SetResetClause FunctionSetResetClause
+%type <list>    set_option_list
+%type <defelt>  set_option_elem
+%type <str>     set_option_name
+%type <node>    set_option_arg
 
 %type <node>	TableElement TypedTableElement ConstraintElem TableFuncElement
 %type <node>	columnDef columnOptions
@@ -1403,6 +1407,12 @@ VariableSetStmt:
 					n->is_local = false;
 					$$ = (Node *) n;
 				}
+			| SET '(' set_option_list ')' set_rest
+				{
+					VariableSetStmt *n = $5;
+					n->options = $3;
+					$$ = (Node *) n;
+				}
 			| SET LOCAL set_rest
 				{
 					VariableSetStmt *n = $3;
@@ -1415,6 +1425,34 @@ VariableSetStmt:
 					n->is_local = false;
 					$$ = (Node *) n;
 				}
+		;
+
+set_option_list:
+			set_option_elem
+				{
+					$$ = list_make1($1);
+				}
+			| set_option_list ',' set_option_elem
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+set_option_elem:
+			set_option_name set_option_arg
+				{
+					$$ = makeDefElem($1, $2, @1);
+				}
+		;
+
+set_option_name:
+			NonReservedWord			{ $$ = $1; }
+		;
+
+set_option_arg:
+			opt_boolean_or_string       { $$ = (Node *) makeString($1); }
+            | NumericOnly               { $$ = (Node *) $1; }
+            | /* EMPTY */               { $$ = NULL; }
 		;
 
 set_rest:

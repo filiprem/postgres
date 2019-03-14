@@ -2007,6 +2007,8 @@ typedef struct VariableSetStmt
 	char	   *name;			/* variable to be set */
 	List	   *args;			/* List of A_Const nodes */
 	bool		is_local;		/* SET LOCAL? */
+	List	   *options;		/* List of DefElem nodes */
+
 } VariableSetStmt;
 
 /* ----------------------
