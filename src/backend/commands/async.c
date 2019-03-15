@@ -154,6 +154,9 @@
  */
 #define NOTIFY_PAYLOAD_MAX_LENGTH	(BLCKSZ - NAMEDATALEN - 128)
 
+/* Hash table for caching NOTIFY payloads */
+static HTAB *NotifyHash = NULL;
+
 /*
  * Struct representing an entry in the global notify queue
  *
@@ -397,6 +400,7 @@ static void asyncQueueAdvanceTail(void);
 static void ProcessIncomingNotify(void);
 static bool AsyncExistsPendingNotify(const char *channel, const char *payload);
 static void ClearPendingActionsAndNotifies(void);
+static void InitNotifyHashTable(void);
 
 /*
  * We will work on the page range of 0..QUEUE_MAX_PAGE.
@@ -2241,4 +2245,23 @@ ClearPendingActionsAndNotifies(void)
 	 */
 	pendingActions = NIL;
 	pendingNotifies = NIL;
+}
+
+/*
+ * Initialize notify hash table upon first use.
+ */
+static void
+InitNotifyHashTable(void)
+{
+	HASHCTL		hash_ctl;
+
+	MemSet(&hash_ctl, 0, sizeof(hash_ctl));
+
+	hash_ctl.keysize = NAMEDATALEN;
+	hash_ctl.entrysize = sizeof(AsyncQueueEntry);
+
+	NotifyHash = hash_create("NOTIFY queue",
+								   32,
+								   &hash_ctl,
+								   HASH_ELEM);
 }
