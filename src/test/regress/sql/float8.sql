@@ -154,6 +154,36 @@ SELECT '' AS bad, f.f1 / '0.0' from FLOAT8_TBL f;
 
 SELECT '' AS five, * FROM FLOAT8_TBL;
 
+-- hyperbolic functions
+-- we run these with extra_float_digits = 0 too, since different platforms
+-- tend to produce results that vary in the last place.
+SELECT sinh(float8 '1');
+SELECT cosh(float8 '1');
+SELECT tanh(float8 '1');
+SELECT asinh(float8 '1');
+SELECT acosh(float8 '2');
+SELECT atanh(float8 '0.5');
+-- test Inf/NaN cases for hyperbolic functions
+SELECT sinh(float8 'infinity');
+SELECT sinh(float8 '-infinity');
+SELECT sinh(float8 'nan');
+SELECT cosh(float8 'infinity');
+SELECT cosh(float8 '-infinity');
+SELECT cosh(float8 'nan');
+SELECT tanh(float8 'infinity');
+SELECT tanh(float8 '-infinity');
+SELECT tanh(float8 'nan');
+SELECT asinh(float8 'infinity');
+SELECT asinh(float8 '-infinity');
+SELECT asinh(float8 'nan');
+-- acosh(Inf) should be Inf, but some mingw versions produce NaN, so skip test
+-- SELECT acosh(float8 'infinity');
+SELECT acosh(float8 '-infinity');
+SELECT acosh(float8 'nan');
+SELECT atanh(float8 'infinity');
+SELECT atanh(float8 '-infinity');
+SELECT atanh(float8 'nan');
+
 RESET extra_float_digits;
 
 -- test for over- and underflow
@@ -433,9 +463,4 @@ select float8send(flt) as ibits,
 	offset 0) s;
 
 -- clean up, lest opr_sanity complain
-
-\set VERBOSITY terse
 drop type xfloat8 cascade;
-\set VERBOSITY default
-
---

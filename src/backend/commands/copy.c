@@ -2911,9 +2911,13 @@ CopyFrom(CopyState cstate)
 
 		if (!skip_tuple)
 		{
+			/*
+			 * If there is an INSTEAD OF INSERT ROW trigger, let it handle the
+			 * tuple.  Otherwise, proceed with inserting the tuple into the
+			 * table or foreign table.
+			 */
 			if (has_instead_insert_row_trig)
 			{
-				/* Pass the data to the INSTEAD ROW INSERT trigger */
 				ExecIRInsertTriggers(estate, resultRelInfo, slot);
 			}
 			else
@@ -3003,7 +3007,6 @@ CopyFrom(CopyState cstate)
 					/* And create index entries for it */
 					if (resultRelInfo->ri_NumIndices > 0)
 						recheckIndexes = ExecInsertIndexTuples(slot,
-															   &(tuple->t_self),
 															   estate,
 															   false,
 															   NULL,
@@ -3147,7 +3150,7 @@ CopyFromInsertBatch(CopyState cstate, EState *estate, CommandId mycid,
 			cstate->cur_lineno = firstBufferedLineNo + i;
 			ExecStoreHeapTuple(bufferedTuples[i], myslot, false);
 			recheckIndexes =
-				ExecInsertIndexTuples(myslot, &(bufferedTuples[i]->t_self),
+				ExecInsertIndexTuples(myslot,
 									  estate, false, NULL, NIL);
 			ExecARInsertTriggers(estate, resultRelInfo,
 								 myslot,

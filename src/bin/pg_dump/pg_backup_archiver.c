@@ -1382,8 +1382,7 @@ SortTocFromFile(Archive *AHX)
 	bool		incomplete_line;
 
 	/* Allocate space for the 'wanted' array, and init it */
-	ropt->idWanted = (bool *) pg_malloc(sizeof(bool) * AH->maxDumpId);
-	memset(ropt->idWanted, 0, sizeof(bool) * AH->maxDumpId);
+	ropt->idWanted = (bool *) pg_malloc0(sizeof(bool) * AH->maxDumpId);
 
 	/* Setup the file */
 	fh = fopen(ropt->tocFile, PG_BINARY_R);
@@ -3178,6 +3177,9 @@ _doSetFixedOutputState(ArchiveHandle *AH)
 
 	/* Make sure function checking is disabled */
 	ahprintf(AH, "SET check_function_bodies = false;\n");
+
+	/* Ensure that all valid XML data will be accepted */
+	ahprintf(AH, "SET xmloption = content;\n");
 
 	/* Avoid annoying notices etc */
 	ahprintf(AH, "SET client_min_messages = warning;\n");
