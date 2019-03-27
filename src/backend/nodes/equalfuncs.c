@@ -1265,6 +1265,7 @@ _equalDefineStmt(const DefineStmt *a, const DefineStmt *b)
 	COMPARE_NODE_FIELD(args);
 	COMPARE_NODE_FIELD(definition);
 	COMPARE_SCALAR_FIELD(if_not_exists);
+	COMPARE_SCALAR_FIELD(replace);
 
 	return true;
 }
@@ -1510,6 +1511,7 @@ _equalTransactionStmt(const TransactionStmt *a, const TransactionStmt *b)
 	COMPARE_NODE_FIELD(options);
 	COMPARE_STRING_FIELD(savepoint_name);
 	COMPARE_STRING_FIELD(gid);
+	COMPARE_SCALAR_FIELD(chain);
 
 	return true;
 }
@@ -1671,8 +1673,9 @@ _equalDropdbStmt(const DropdbStmt *a, const DropdbStmt *b)
 static bool
 _equalVacuumStmt(const VacuumStmt *a, const VacuumStmt *b)
 {
-	COMPARE_SCALAR_FIELD(options);
+	COMPARE_NODE_FIELD(options);
 	COMPARE_NODE_FIELD(rels);
+	COMPARE_SCALAR_FIELD(is_vacuumcmd);
 
 	return true;
 }
