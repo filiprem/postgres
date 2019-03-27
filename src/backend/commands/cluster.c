@@ -22,6 +22,7 @@
 #include "access/multixact.h"
 #include "access/relscan.h"
 #include "access/rewriteheap.h"
+#include "access/tableam.h"
 #include "access/transam.h"
 #include "access/tuptoaster.h"
 #include "access/xact.h"
@@ -35,10 +36,12 @@
 #include "catalog/objectaccess.h"
 #include "catalog/toasting.h"
 #include "commands/cluster.h"
+#include "commands/progress.h"
 #include "commands/tablecmds.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
 #include "optimizer/optimizer.h"
+#include "pgstat.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
 #include "storage/predicate.h"
@@ -275,6 +278,14 @@ cluster_rel(Oid tableOid, Oid indexOid, int options)
 	/* Check for user-requested abort. */
 	CHECK_FOR_INTERRUPTS();
 
+	pgstat_progress_start_command(PROGRESS_COMMAND_CLUSTER, tableOid);
+	if (OidIsValid(indexOid))
+		pgstat_progress_update_param(PROGRESS_CLUSTER_COMMAND,
+									 PROGRESS_CLUSTER_COMMAND_CLUSTER);
+	else
+		pgstat_progress_update_param(PROGRESS_CLUSTER_COMMAND,
+									 PROGRESS_CLUSTER_COMMAND_VACUUM_FULL);
+
 	/*
 	 * We grab exclusive access to the target rel and index for the duration
 	 * of the transaction.  (This is redundant for the single-transaction
@@ -285,7 +296,10 @@ cluster_rel(Oid tableOid, Oid indexOid, int options)
 
 	/* If the table has gone away, we can skip processing it */
 	if (!OldHeap)
+	{
+		pgstat_progress_end_command();
 		return;
+	}
 
 	/*
 	 * Since we may open a new transaction for each relation, we have to check
@@ -304,6 +318,7 @@ cluster_rel(Oid tableOid, Oid indexOid, int options)
 		if (!pg_class_ownercheck(tableOid, GetUserId()))
 		{
 			relation_close(OldHeap, AccessExclusiveLock);
+			pgstat_progress_end_command();
 			return;
 		}
 
@@ -318,6 +333,7 @@ cluster_rel(Oid tableOid, Oid indexOid, int options)
 		if (RELATION_IS_OTHER_TEMP(OldHeap))
 		{
 			relation_close(OldHeap, AccessExclusiveLock);
+			pgstat_progress_end_command();
 			return;
 		}
 
@@ -329,6 +345,7 @@ cluster_rel(Oid tableOid, Oid indexOid, int options)
 			if (!SearchSysCacheExists1(RELOID, ObjectIdGetDatum(indexOid)))
 			{
 				relation_close(OldHeap, AccessExclusiveLock);
+				pgstat_progress_end_command();
 				return;
 			}
 
@@ -339,6 +356,7 @@ cluster_rel(Oid tableOid, Oid indexOid, int options)
 			if (!HeapTupleIsValid(tuple))	/* probably can't happen */
 			{
 				relation_close(OldHeap, AccessExclusiveLock);
+				pgstat_progress_end_command();
 				return;
 			}
 			indexForm = (Form_pg_index) GETSTRUCT(tuple);
@@ -346,6 +364,7 @@ cluster_rel(Oid tableOid, Oid indexOid, int options)
 			{
 				ReleaseSysCache(tuple);
 				relation_close(OldHeap, AccessExclusiveLock);
+				pgstat_progress_end_command();
 				return;
 			}
 			ReleaseSysCache(tuple);
@@ -400,6 +419,7 @@ cluster_rel(Oid tableOid, Oid indexOid, int options)
 		!RelationIsPopulated(OldHeap))
 	{
 		relation_close(OldHeap, AccessExclusiveLock);
+		pgstat_progress_end_command();
 		return;
 	}
 
@@ -415,6 +435,8 @@ cluster_rel(Oid tableOid, Oid indexOid, int options)
 	rebuild_relation(OldHeap, indexOid, verbose);
 
 	/* NB: rebuild_relation does table_close() on OldHeap */
+
+	pgstat_progress_end_command();
 }
 
 /*
@@ -764,6 +786,7 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 	Datum	   *values;
 	bool	   *isnull;
 	IndexScanDesc indexScan;
+	TableScanDesc tableScan;
 	HeapScanDesc heapScan;
 	bool		use_wal;
 	bool		is_system_catalog;
@@ -779,6 +802,8 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 	BlockNumber num_pages;
 	int			elevel = verbose ? INFO : DEBUG2;
 	PGRUsage	ru0;
+	TupleTableSlot *slot;
+	BufferHeapTupleTableSlot *hslot;
 
 	pg_rusage_init(&ru0);
 
@@ -924,15 +949,39 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 	 */
 	if (OldIndex != NULL && !use_sort)
 	{
+		const int   ci_index[] = {
+			PROGRESS_CLUSTER_PHASE,
+			PROGRESS_CLUSTER_INDEX_RELID
+		};
+		int64       ci_val[2];
+
+		/* Set phase and OIDOldIndex to columns */
+		ci_val[0] = PROGRESS_CLUSTER_PHASE_INDEX_SCAN_HEAP;
+		ci_val[1] = OIDOldIndex;
+		pgstat_progress_update_multi_param(2, ci_index, ci_val);
+
+		tableScan = NULL;
 		heapScan = NULL;
 		indexScan = index_beginscan(OldHeap, OldIndex, SnapshotAny, 0, 0);
 		index_rescan(indexScan, NULL, 0, NULL, 0);
 	}
 	else
 	{
-		heapScan = heap_beginscan(OldHeap, SnapshotAny, 0, (ScanKey) NULL);
+		/* In scan-and-sort mode and also VACUUM FULL, set phase */
+		pgstat_progress_update_param(PROGRESS_CLUSTER_PHASE,
+									 PROGRESS_CLUSTER_PHASE_SEQ_SCAN_HEAP);
+
+		tableScan = table_beginscan(OldHeap, SnapshotAny, 0, (ScanKey) NULL);
+		heapScan = (HeapScanDesc) tableScan;
 		indexScan = NULL;
+
+		/* Set total heap blocks */
+		pgstat_progress_update_param(PROGRESS_CLUSTER_TOTAL_HEAP_BLKS,
+									 heapScan->rs_nblocks);
 	}
+
+	slot = table_slot_create(OldHeap, NULL);
+	hslot = (BufferHeapTupleTableSlot *) slot;
 
 	/* Log what we're doing */
 	if (indexScan != NULL)
@@ -968,23 +1017,27 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 
 		if (indexScan != NULL)
 		{
-			tuple = index_getnext(indexScan, ForwardScanDirection);
-			if (tuple == NULL)
+			if (!index_getnext_slot(indexScan, ForwardScanDirection, slot))
 				break;
 
 			/* Since we used no scan keys, should never need to recheck */
 			if (indexScan->xs_recheck)
 				elog(ERROR, "CLUSTER does not support lossy index conditions");
 
-			buf = indexScan->xs_cbuf;
+			tuple = hslot->base.tuple;
+			buf = hslot->buffer;
 		}
 		else
 		{
-			tuple = heap_getnext(heapScan, ForwardScanDirection);
+			tuple = heap_getnext(tableScan, ForwardScanDirection);
 			if (tuple == NULL)
 				break;
 
 			buf = heapScan->rs_cbuf;
+
+			/* In scan-and-sort mode and also VACUUM FULL, set heap blocks scanned */
+			pgstat_progress_update_param(PROGRESS_CLUSTER_HEAP_BLKS_SCANNED,
+										 heapScan->rs_cblock + 1);
 		}
 
 		LockBuffer(buf, BUFFER_LOCK_SHARE);
@@ -1055,18 +1108,39 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 
 		num_tuples += 1;
 		if (tuplesort != NULL)
+		{
 			tuplesort_putheaptuple(tuplesort, tuple);
+
+			/* In scan-and-sort mode, report increase in number of tuples scanned */
+			pgstat_progress_update_param(PROGRESS_CLUSTER_HEAP_TUPLES_SCANNED,
+										 num_tuples);
+		}
 		else
+		{
+			const int   ct_index[] = {
+				PROGRESS_CLUSTER_HEAP_TUPLES_SCANNED,
+				PROGRESS_CLUSTER_HEAP_TUPLES_WRITTEN
+			};
+			int64       ct_val[2];
+
 			reform_and_rewrite_tuple(tuple,
 									 oldTupDesc, newTupDesc,
 									 values, isnull,
 									 rwstate);
+
+			/* In indexscan mode and also VACUUM FULL, report increase in number of tuples scanned and written */
+			ct_val[0] = num_tuples;
+			ct_val[1] = num_tuples;
+			pgstat_progress_update_multi_param(2, ct_index, ct_val);
+		}
 	}
 
 	if (indexScan != NULL)
 		index_endscan(indexScan);
 	if (heapScan != NULL)
-		heap_endscan(heapScan);
+		table_endscan(tableScan);
+	if (slot)
+		ExecDropSingleTupleTableSlot(slot);
 
 	/*
 	 * In scan-and-sort mode, complete the sort, then read out all live tuples
@@ -1074,7 +1148,16 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 	 */
 	if (tuplesort != NULL)
 	{
+		double n_tuples = 0;
+		/* Report that we are now sorting tuples */
+		pgstat_progress_update_param(PROGRESS_CLUSTER_PHASE,
+									 PROGRESS_CLUSTER_PHASE_SORT_TUPLES);
+
 		tuplesort_performsort(tuplesort);
+
+		/* Report that we are now writing new heap */
+		pgstat_progress_update_param(PROGRESS_CLUSTER_PHASE,
+									 PROGRESS_CLUSTER_PHASE_WRITE_NEW_HEAP);
 
 		for (;;)
 		{
@@ -1086,10 +1169,14 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex, bool verbose,
 			if (tuple == NULL)
 				break;
 
+			n_tuples += 1;
 			reform_and_rewrite_tuple(tuple,
 									 oldTupDesc, newTupDesc,
 									 values, isnull,
 									 rwstate);
+			/* Report n_tuples */
+			pgstat_progress_update_param(PROGRESS_CLUSTER_HEAP_TUPLES_WRITTEN,
+										 n_tuples);
 		}
 
 		tuplesort_end(tuplesort);
@@ -1528,6 +1615,10 @@ finish_heap_swap(Oid OIDOldHeap, Oid OIDNewHeap,
 	int			reindex_flags;
 	int			i;
 
+	/* Report that we are now swapping relation files */
+	pgstat_progress_update_param(PROGRESS_CLUSTER_PHASE,
+								 PROGRESS_CLUSTER_PHASE_SWAP_REL_FILES);
+
 	/* Zero out possible results from swapped_relation_files */
 	memset(mapped_tables, 0, sizeof(mapped_tables));
 
@@ -1575,7 +1666,15 @@ finish_heap_swap(Oid OIDOldHeap, Oid OIDNewHeap,
 	else if (newrelpersistence == RELPERSISTENCE_PERMANENT)
 		reindex_flags |= REINDEX_REL_FORCE_INDEXES_PERMANENT;
 
+	/* Report that we are now reindexing relations */
+	pgstat_progress_update_param(PROGRESS_CLUSTER_PHASE,
+								 PROGRESS_CLUSTER_PHASE_REBUILD_INDEX);
+
 	reindex_relation(OIDOldHeap, reindex_flags, 0);
+
+	/* Report that we are now doing clean up */
+	pgstat_progress_update_param(PROGRESS_CLUSTER_PHASE,
+								 PROGRESS_CLUSTER_PHASE_FINAL_CLEANUP);
 
 	/*
 	 * If the relation being rebuild is pg_class, swap_relation_files()
@@ -1694,7 +1793,7 @@ static List *
 get_tables_to_cluster(MemoryContext cluster_context)
 {
 	Relation	indRelation;
-	HeapScanDesc scan;
+	TableScanDesc scan;
 	ScanKeyData entry;
 	HeapTuple	indexTuple;
 	Form_pg_index index;
@@ -1713,7 +1812,7 @@ get_tables_to_cluster(MemoryContext cluster_context)
 				Anum_pg_index_indisclustered,
 				BTEqualStrategyNumber, F_BOOLEQ,
 				BoolGetDatum(true));
-	scan = heap_beginscan_catalog(indRelation, 1, &entry);
+	scan = table_beginscan_catalog(indRelation, 1, &entry);
 	while ((indexTuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
 		index = (Form_pg_index) GETSTRUCT(indexTuple);
@@ -1734,7 +1833,7 @@ get_tables_to_cluster(MemoryContext cluster_context)
 
 		MemoryContextSwitchTo(old_context);
 	}
-	heap_endscan(scan);
+	table_endscan(scan);
 
 	relation_close(indRelation, AccessShareLock);
 

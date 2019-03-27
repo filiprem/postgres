@@ -4354,14 +4354,20 @@ binary_upgrade_set_type_oids_by_rel_oid(Archive *fout,
 	Oid			pg_type_oid;
 	bool		toast_set = false;
 
-	/* we only support old >= 8.3 for binary upgrades */
+	/*
+	 * We only support old >= 8.3 for binary upgrades.
+	 *
+	 * We purposefully ignore toast OIDs for partitioned tables; the reason is
+	 * that versions 10 and 11 have them, but 12 does not, so emitting them
+	 * causes the upgrade to fail.
+	 */
 	appendPQExpBuffer(upgrade_query,
 					  "SELECT c.reltype AS crel, t.reltype AS trel "
 					  "FROM pg_catalog.pg_class c "
 					  "LEFT JOIN pg_catalog.pg_class t ON "
-					  "  (c.reltoastrelid = t.oid) "
+					  "  (c.reltoastrelid = t.oid AND c.relkind <> '%c') "
 					  "WHERE c.oid = '%u'::pg_catalog.oid;",
-					  pg_rel_oid);
+					  RELKIND_PARTITIONED_TABLE, pg_rel_oid);
 
 	upgrade_res = ExecuteSqlQueryForSingleRow(fout, upgrade_query->data);
 
@@ -5953,6 +5959,10 @@ getTables(Archive *fout, int *numTables)
 	 * information about each table, basically just enough to decide if it is
 	 * interesting. We must fetch all tables in this phase because otherwise
 	 * we cannot correctly identify inherited columns, owned sequences, etc.
+	 *
+	 * We purposefully ignore toast OIDs for partitioned tables; the reason is
+	 * that versions 10 and 11 have them, but 12 does not, so emitting them
+	 * causes the upgrade to fail.
 	 */
 
 	if (fout->remoteVersion >= 90600)
@@ -6049,7 +6059,7 @@ getTables(Archive *fout, int *numTables)
 						  "d.classid = c.tableoid AND d.objid = c.oid AND "
 						  "d.objsubid = 0 AND "
 						  "d.refclassid = c.tableoid AND d.deptype IN ('a', 'i')) "
-						  "LEFT JOIN pg_class tc ON (c.reltoastrelid = tc.oid) "
+						  "LEFT JOIN pg_class tc ON (c.reltoastrelid = tc.oid AND c.relkind <> '%c') "
 						  "LEFT JOIN pg_am am ON (c.relam = am.oid) "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(c.oid = pip.objoid "
@@ -6072,6 +6082,7 @@ getTables(Archive *fout, int *numTables)
 						  ispartition,
 						  partbound,
 						  RELKIND_SEQUENCE,
+						  RELKIND_PARTITIONED_TABLE,
 						  RELKIND_RELATION, RELKIND_SEQUENCE,
 						  RELKIND_VIEW, RELKIND_COMPOSITE_TYPE,
 						  RELKIND_MATVIEW, RELKIND_FOREIGN_TABLE,
@@ -13406,6 +13417,7 @@ dumpCollation(Archive *fout, CollInfo *collinfo)
 	char	   *qcollname;
 	PGresult   *res;
 	int			i_collprovider;
+	int			i_collisdeterministic;
 	int			i_collcollate;
 	int			i_collctype;
 	const char *collprovider;
@@ -13423,28 +13435,35 @@ dumpCollation(Archive *fout, CollInfo *collinfo)
 	qcollname = pg_strdup(fmtId(collinfo->dobj.name));
 
 	/* Get collation-specific details */
+	appendPQExpBuffer(query, "SELECT ");
+
 	if (fout->remoteVersion >= 100000)
-		appendPQExpBuffer(query, "SELECT "
+		appendPQExpBuffer(query,
 						  "collprovider, "
-						  "collcollate, "
-						  "collctype, "
-						  "collversion "
-						  "FROM pg_catalog.pg_collation c "
-						  "WHERE c.oid = '%u'::pg_catalog.oid",
-						  collinfo->dobj.catId.oid);
+						  "collversion, ");
 	else
-		appendPQExpBuffer(query, "SELECT "
+		appendPQExpBuffer(query,
 						  "'c' AS collprovider, "
-						  "collcollate, "
-						  "collctype, "
-						  "NULL AS collversion "
-						  "FROM pg_catalog.pg_collation c "
-						  "WHERE c.oid = '%u'::pg_catalog.oid",
-						  collinfo->dobj.catId.oid);
+						  "NULL AS collversion, ");
+
+	if (fout->remoteVersion >= 120000)
+		appendPQExpBuffer(query,
+						  "collisdeterministic, ");
+	else
+		appendPQExpBuffer(query,
+						  "true AS collisdeterministic, ");
+
+	appendPQExpBuffer(query,
+					  "collcollate, "
+					  "collctype "
+					  "FROM pg_catalog.pg_collation c "
+					  "WHERE c.oid = '%u'::pg_catalog.oid",
+					  collinfo->dobj.catId.oid);
 
 	res = ExecuteSqlQueryForSingleRow(fout, query->data);
 
 	i_collprovider = PQfnumber(res, "collprovider");
+	i_collisdeterministic = PQfnumber(res, "collisdeterministic");
 	i_collcollate = PQfnumber(res, "collcollate");
 	i_collctype = PQfnumber(res, "collctype");
 
@@ -13470,6 +13489,9 @@ dumpCollation(Archive *fout, CollInfo *collinfo)
 		exit_horribly(NULL,
 					  "unrecognized collation provider: %s\n",
 					  collprovider);
+
+	if (strcmp(PQgetvalue(res, 0, i_collisdeterministic), "f") == 0)
+		appendPQExpBufferStr(q, ", deterministic = false");
 
 	if (strcmp(collcollate, collctype) == 0)
 	{

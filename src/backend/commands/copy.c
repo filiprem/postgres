@@ -21,6 +21,7 @@
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/sysattr.h"
+#include "access/tableam.h"
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "catalog/dependency.h"
@@ -2073,13 +2074,13 @@ CopyTo(CopyState cstate)
 	{
 		Datum	   *values;
 		bool	   *nulls;
-		HeapScanDesc scandesc;
+		TableScanDesc scandesc;
 		HeapTuple	tuple;
 
 		values = (Datum *) palloc(num_phys_attrs * sizeof(Datum));
 		nulls = (bool *) palloc(num_phys_attrs * sizeof(bool));
 
-		scandesc = heap_beginscan(cstate->rel, GetActiveSnapshot(), 0, NULL);
+		scandesc = table_beginscan(cstate->rel, GetActiveSnapshot(), 0, NULL);
 
 		processed = 0;
 		while ((tuple = heap_getnext(scandesc, ForwardScanDirection)) != NULL)
@@ -2094,7 +2095,7 @@ CopyTo(CopyState cstate)
 			processed++;
 		}
 
-		heap_endscan(scandesc);
+		table_endscan(scandesc);
 
 		pfree(values);
 		pfree(nulls);
@@ -2910,9 +2911,13 @@ CopyFrom(CopyState cstate)
 
 		if (!skip_tuple)
 		{
+			/*
+			 * If there is an INSTEAD OF INSERT ROW trigger, let it handle the
+			 * tuple.  Otherwise, proceed with inserting the tuple into the
+			 * table or foreign table.
+			 */
 			if (has_instead_insert_row_trig)
 			{
-				/* Pass the data to the INSTEAD ROW INSERT trigger */
 				ExecIRInsertTriggers(estate, resultRelInfo, slot);
 			}
 			else
@@ -3002,7 +3007,6 @@ CopyFrom(CopyState cstate)
 					/* And create index entries for it */
 					if (resultRelInfo->ri_NumIndices > 0)
 						recheckIndexes = ExecInsertIndexTuples(slot,
-															   &(tuple->t_self),
 															   estate,
 															   false,
 															   NULL,
@@ -3146,7 +3150,7 @@ CopyFromInsertBatch(CopyState cstate, EState *estate, CommandId mycid,
 			cstate->cur_lineno = firstBufferedLineNo + i;
 			ExecStoreHeapTuple(bufferedTuples[i], myslot, false);
 			recheckIndexes =
-				ExecInsertIndexTuples(myslot, &(bufferedTuples[i]->t_self),
+				ExecInsertIndexTuples(myslot,
 									  estate, false, NULL, NIL);
 			ExecARInsertTriggers(estate, resultRelInfo,
 								 myslot,

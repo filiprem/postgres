@@ -23,10 +23,10 @@
 
 #include "postgres.h"
 
-#include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "access/table.h"
+#include "access/tableam.h"
 #include "access/xact.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_constraint.h"
@@ -42,6 +42,7 @@
 #include "storage/bufmgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/datum.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
 #include "utils/inval.h"
@@ -253,26 +254,9 @@ RI_FKey_check(TriggerData *trigdata)
 	 * checked).  Test its liveness according to SnapshotSelf.  We need pin
 	 * and lock on the buffer to call HeapTupleSatisfiesVisibility.  Caller
 	 * should be holding pin, but not lock.
-	 *
-	 * XXX: Note that the buffer-tuple specificity will be removed in the near
-	 * future.
 	 */
-	if (TTS_IS_BUFFERTUPLE(newslot))
-	{
-		BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) newslot;
-
-		Assert(BufferIsValid(bslot->buffer));
-
-		LockBuffer(bslot->buffer, BUFFER_LOCK_SHARE);
-		if (!HeapTupleSatisfiesVisibility(bslot->base.tuple, SnapshotSelf, bslot->buffer))
-		{
-			LockBuffer(bslot->buffer, BUFFER_LOCK_UNLOCK);
-			return PointerGetDatum(NULL);
-		}
-		LockBuffer(bslot->buffer, BUFFER_LOCK_UNLOCK);
-	}
-	else
-		elog(ERROR, "expected buffer tuple");
+	if (!table_tuple_satisfies_snapshot(trigdata->tg_relation, newslot, SnapshotSelf))
+		return PointerGetDatum(NULL);
 
 	/*
 	 * Get the relation descriptors of the FK and PK tables.
@@ -692,6 +676,8 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 		{
 			Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
 			Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
+			Oid			pk_coll = RIAttCollation(pk_rel, riinfo->pk_attnums[i]);
+			Oid			fk_coll = RIAttCollation(fk_rel, riinfo->fk_attnums[i]);
 
 			quoteOneName(attname,
 						 RIAttName(fk_rel, riinfo->fk_attnums[i]));
@@ -700,6 +686,8 @@ ri_restrict(TriggerData *trigdata, bool is_no_action)
 							paramname, pk_type,
 							riinfo->pf_eq_oprs[i],
 							attname, fk_type);
+			if (pk_coll != fk_coll && !get_collation_isdeterministic(pk_coll))
+				ri_GenerateQualCollation(&querybuf, pk_coll);
 			querysep = "AND";
 			queryoids[i] = pk_type;
 		}
@@ -794,6 +782,8 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 		{
 			Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
 			Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
+			Oid			pk_coll = RIAttCollation(pk_rel, riinfo->pk_attnums[i]);
+			Oid			fk_coll = RIAttCollation(fk_rel, riinfo->fk_attnums[i]);
 
 			quoteOneName(attname,
 						 RIAttName(fk_rel, riinfo->fk_attnums[i]));
@@ -802,6 +792,8 @@ RI_FKey_cascade_del(PG_FUNCTION_ARGS)
 							paramname, pk_type,
 							riinfo->pf_eq_oprs[i],
 							attname, fk_type);
+			if (pk_coll != fk_coll && !get_collation_isdeterministic(pk_coll))
+				ri_GenerateQualCollation(&querybuf, pk_coll);
 			querysep = "AND";
 			queryoids[i] = pk_type;
 		}
@@ -906,6 +898,8 @@ RI_FKey_cascade_upd(PG_FUNCTION_ARGS)
 		{
 			Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
 			Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
+			Oid			pk_coll = RIAttCollation(pk_rel, riinfo->pk_attnums[i]);
+			Oid			fk_coll = RIAttCollation(fk_rel, riinfo->fk_attnums[i]);
 
 			quoteOneName(attname,
 						 RIAttName(fk_rel, riinfo->fk_attnums[i]));
@@ -917,6 +911,8 @@ RI_FKey_cascade_upd(PG_FUNCTION_ARGS)
 							paramname, pk_type,
 							riinfo->pf_eq_oprs[i],
 							attname, fk_type);
+			if (pk_coll != fk_coll && !get_collation_isdeterministic(pk_coll))
+				ri_GenerateQualCollation(&querybuf, pk_coll);
 			querysep = ",";
 			qualsep = "AND";
 			queryoids[i] = pk_type;
@@ -1081,6 +1077,8 @@ ri_set(TriggerData *trigdata, bool is_set_null)
 		{
 			Oid			pk_type = RIAttType(pk_rel, riinfo->pk_attnums[i]);
 			Oid			fk_type = RIAttType(fk_rel, riinfo->fk_attnums[i]);
+			Oid			pk_coll = RIAttCollation(pk_rel, riinfo->pk_attnums[i]);
+			Oid			fk_coll = RIAttCollation(fk_rel, riinfo->fk_attnums[i]);
 
 			quoteOneName(attname,
 						 RIAttName(fk_rel, riinfo->fk_attnums[i]));
@@ -1093,6 +1091,8 @@ ri_set(TriggerData *trigdata, bool is_set_null)
 							paramname, pk_type,
 							riinfo->pf_eq_oprs[i],
 							attname, fk_type);
+			if (pk_coll != fk_coll && !get_collation_isdeterministic(pk_coll))
+				ri_GenerateQualCollation(&querybuf, pk_coll);
 			querysep = ",";
 			qualsep = "AND";
 			queryoids[i] = pk_type;
@@ -1752,6 +1752,13 @@ ri_FetchConstraintInfo(Trigger *trigger, Relation trig_rel, bool rel_is_pk)
 	{
 		if (riinfo->fk_relid != trigger->tgconstrrelid ||
 			riinfo->pk_relid != RelationGetRelid(trig_rel))
+			elog(ERROR, "wrong pg_constraint entry for trigger \"%s\" on table \"%s\"",
+				 trigger->tgname, RelationGetRelationName(trig_rel));
+	}
+	else
+	{
+		if (riinfo->fk_relid != RelationGetRelid(trig_rel) ||
+			riinfo->pk_relid != trigger->tgconstrrelid)
 			elog(ERROR, "wrong pg_constraint entry for trigger \"%s\" on table \"%s\"",
 				 trigger->tgname, RelationGetRelationName(trig_rel));
 	}
@@ -2419,18 +2426,11 @@ ri_KeysEqual(Relation rel, TupleTableSlot *oldslot, TupleTableSlot *newslot,
 			 const RI_ConstraintInfo *riinfo, bool rel_is_pk)
 {
 	const int16 *attnums;
-	const Oid  *eq_oprs;
 
 	if (rel_is_pk)
-	{
 		attnums = riinfo->pk_attnums;
-		eq_oprs = riinfo->pp_eq_oprs;
-	}
 	else
-	{
 		attnums = riinfo->fk_attnums;
-		eq_oprs = riinfo->ff_eq_oprs;
-	}
 
 	/* XXX: could be worthwhile to fetch all necessary attrs at once */
 	for (int i = 0; i < riinfo->nkeys; i++)
@@ -2453,12 +2453,32 @@ ri_KeysEqual(Relation rel, TupleTableSlot *oldslot, TupleTableSlot *newslot,
 		if (isnull)
 			return false;
 
-		/*
-		 * Compare them with the appropriate equality operator.
-		 */
-		if (!ri_AttributesEqual(eq_oprs[i], RIAttType(rel, attnums[i]),
-								oldvalue, newvalue))
-			return false;
+		if (rel_is_pk)
+		{
+			/*
+			 * If we are looking at the PK table, then do a bytewise
+			 * comparison.  We must propagate PK changes if the value is
+			 * changed to one that "looks" different but would compare as
+			 * equal using the equality operator.  This only makes a
+			 * difference for ON UPDATE CASCADE, but for consistency we treat
+			 * all changes to the PK the same.
+			 */
+			Form_pg_attribute att = TupleDescAttr(oldslot->tts_tupleDescriptor, attnums[i] - 1);
+
+			if (!datum_image_eq(oldvalue, newvalue, att->attbyval, att->attlen))
+				return false;
+		}
+		else
+		{
+			/*
+			 * For the FK table, compare with the appropriate equality
+			 * operator.  Changes that compare equal will still satisfy the
+			 * constraint after the update.
+			 */
+			if (!ri_AttributesEqual(riinfo->ff_eq_oprs[i], RIAttType(rel, attnums[i]),
+									oldvalue, newvalue))
+				return false;
+		}
 	}
 
 	return true;
@@ -2492,11 +2512,20 @@ ri_AttributesEqual(Oid eq_opr, Oid typeid,
 	}
 
 	/*
-	 * Apply the comparison operator.  We assume it doesn't care about
-	 * collations.
+	 * Apply the comparison operator.
+	 *
+	 * Note: This function is part of a call stack that determines whether an
+	 * update to a row is significant enough that it needs checking or action
+	 * on the other side of a foreign-key constraint.  Therefore, the
+	 * comparison here would need to be done with the collation of the *other*
+	 * table.  For simplicity (e.g., we might not even have the other table
+	 * open), we'll just use the default collation here, which could lead to
+	 * some false negatives.  All this would break if we ever allow
+	 * database-wide collations to be nondeterministic.
 	 */
-	return DatumGetBool(FunctionCall2(&entry->eq_opr_finfo,
-									  oldvalue, newvalue));
+	return DatumGetBool(FunctionCall2Coll(&entry->eq_opr_finfo,
+										  DEFAULT_COLLATION_OID,
+										  oldvalue, newvalue));
 }
 
 /*

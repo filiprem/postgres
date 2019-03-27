@@ -106,6 +106,7 @@
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "access/table.h"
+#include "access/tableam.h"
 #include "catalog/index.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_collation.h"
@@ -556,6 +557,81 @@ scalarineqsel(PlannerInfo *root, Oid operator, bool isgt, bool iseq,
 
 	if (!HeapTupleIsValid(vardata->statsTuple))
 	{
+		/*
+		 * No stats are available.  Typically this means we have to fall back
+		 * on the default estimate; but if the variable is CTID then we can
+		 * make an estimate based on comparing the constant to the table size.
+		 */
+		if (vardata->var && IsA(vardata->var, Var) &&
+			((Var *) vardata->var)->varattno == SelfItemPointerAttributeNumber)
+		{
+			ItemPointer itemptr;
+			double		block;
+			double		density;
+
+			/*
+			 * If the relation's empty, we're going to include all of it.
+			 * (This is mostly to avoid divide-by-zero below.)
+			 */
+			if (vardata->rel->pages == 0)
+				return 1.0;
+
+			itemptr = (ItemPointer) DatumGetPointer(constval);
+			block = ItemPointerGetBlockNumberNoCheck(itemptr);
+
+			/*
+			 * Determine the average number of tuples per page (density).
+			 *
+			 * Since the last page will, on average, be only half full, we can
+			 * estimate it to have half as many tuples as earlier pages.  So
+			 * give it half the weight of a regular page.
+			 */
+			density = vardata->rel->tuples / (vardata->rel->pages - 0.5);
+
+			/* If target is the last page, use half the density. */
+			if (block >= vardata->rel->pages - 1)
+				density *= 0.5;
+
+			/*
+			 * Using the average tuples per page, calculate how far into the
+			 * page the itemptr is likely to be and adjust block accordingly,
+			 * by adding that fraction of a whole block (but never more than a
+			 * whole block, no matter how high the itemptr's offset is).  Here
+			 * we are ignoring the possibility of dead-tuple line pointers,
+			 * which is fairly bogus, but we lack the info to do better.
+			 */
+			if (density > 0.0)
+			{
+				OffsetNumber offset = ItemPointerGetOffsetNumberNoCheck(itemptr);
+
+				block += Min(offset / density, 1.0);
+			}
+
+			/*
+			 * Convert relative block number to selectivity.  Again, the last
+			 * page has only half weight.
+			 */
+			selec = block / (vardata->rel->pages - 0.5);
+
+			/*
+			 * The calculation so far gave us a selectivity for the "<=" case.
+			 * We'll have one less tuple for "<" and one additional tuple for
+			 * ">=", the latter of which we'll reverse the selectivity for
+			 * below, so we can simply subtract one tuple for both cases.  The
+			 * cases that need this adjustment can be identified by iseq being
+			 * equal to isgt.
+			 */
+			if (iseq == isgt && vardata->rel->tuples >= 1.0)
+				selec -= (1.0 / vardata->rel->tuples);
+
+			/* Finally, reverse the selectivity for the ">", ">=" cases. */
+			if (isgt)
+				selec = 1.0 - selec;
+
+			CLAMP_PROBABILITY(selec);
+			return selec;
+		}
+
 		/* no stats available, so default result */
 		return DEFAULT_INEQ_SEL;
 	}
@@ -5099,7 +5175,6 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 			bool		typByVal;
 			ScanKeyData scankeys[1];
 			IndexScanDesc index_scan;
-			HeapTuple	tup;
 			Datum		values[INDEX_MAX_KEYS];
 			bool		isnull[INDEX_MAX_KEYS];
 			SnapshotData SnapshotNonVacuumable;
@@ -5122,8 +5197,7 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 			indexInfo = BuildIndexInfo(indexRel);
 
 			/* some other stuff */
-			slot = MakeSingleTupleTableSlot(RelationGetDescr(heapRel),
-											&TTSOpsHeapTuple);
+			slot = table_slot_create(heapRel, NULL);
 			econtext->ecxt_scantuple = slot;
 			get_typlenbyval(vardata->atttype, &typLen, &typByVal);
 			InitNonVacuumableSnapshot(SnapshotNonVacuumable, RecentGlobalXmin);
@@ -5175,11 +5249,9 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 				index_rescan(index_scan, scankeys, 1, NULL, 0);
 
 				/* Fetch first tuple in sortop's direction */
-				if ((tup = index_getnext(index_scan,
-										 indexscandir)) != NULL)
+				if (index_getnext_slot(index_scan, indexscandir, slot))
 				{
-					/* Extract the index column values from the heap tuple */
-					ExecStoreHeapTuple(tup, slot, false);
+					/* Extract the index column values from the slot */
 					FormIndexDatum(indexInfo, slot, estate,
 								   values, isnull);
 
@@ -5208,11 +5280,9 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 				index_rescan(index_scan, scankeys, 1, NULL, 0);
 
 				/* Fetch first tuple in reverse direction */
-				if ((tup = index_getnext(index_scan,
-										 -indexscandir)) != NULL)
+				if (index_getnext_slot(index_scan, -indexscandir, slot))
 				{
-					/* Extract the index column values from the heap tuple */
-					ExecStoreHeapTuple(tup, slot, false);
+					/* Extract the index column values from the slot */
 					FormIndexDatum(indexInfo, slot, estate,
 								   values, isnull);
 

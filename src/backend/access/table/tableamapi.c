@@ -44,6 +44,40 @@ GetTableAmRoutine(Oid amhandler)
 		elog(ERROR, "Table access method handler %u did not return a TableAmRoutine struct",
 			 amhandler);
 
+	/*
+	 * Assert that all required callbacks are present. That makes it a bit
+	 * easier to keep AMs up to date, e.g. when forward porting them to a new
+	 * major version.
+	 */
+	Assert(routine->scan_begin != NULL);
+	Assert(routine->scan_end != NULL);
+	Assert(routine->scan_rescan != NULL);
+
+	Assert(routine->parallelscan_estimate != NULL);
+	Assert(routine->parallelscan_initialize != NULL);
+	Assert(routine->parallelscan_reinitialize != NULL);
+
+	Assert(routine->index_fetch_begin != NULL);
+	Assert(routine->index_fetch_reset != NULL);
+	Assert(routine->index_fetch_end != NULL);
+	Assert(routine->index_fetch_tuple != NULL);
+
+	Assert(routine->tuple_fetch_row_version != NULL);
+	Assert(routine->tuple_satisfies_snapshot != NULL);
+
+	Assert(routine->tuple_insert != NULL);
+
+	/*
+	 * Could be made optional, but would require throwing error during
+	 * parse-analysis.
+	 */
+	Assert(routine->tuple_insert_speculative != NULL);
+	Assert(routine->tuple_complete_speculative != NULL);
+
+	Assert(routine->tuple_delete != NULL);
+	Assert(routine->tuple_update != NULL);
+	Assert(routine->tuple_lock != NULL);
+
 	return routine;
 }
 
@@ -98,14 +132,14 @@ get_table_am_oid(const char *tableamname, bool missing_ok)
 {
 	Oid			result;
 	Relation	rel;
-	HeapScanDesc scandesc;
+	TableScanDesc scandesc;
 	HeapTuple	tuple;
 	ScanKeyData entry[1];
 
 	/*
-	 * Search pg_tablespace.  We use a heapscan here even though there is an
-	 * index on name, on the theory that pg_tablespace will usually have just
-	 * a few entries and so an indexed lookup is a waste of effort.
+	 * Search pg_am.  We use a heapscan here even though there is an index on
+	 * name, on the theory that pg_am will usually have just a few entries and
+	 * so an indexed lookup is a waste of effort.
 	 */
 	rel = heap_open(AccessMethodRelationId, AccessShareLock);
 
@@ -113,7 +147,7 @@ get_table_am_oid(const char *tableamname, bool missing_ok)
 				Anum_pg_am_amname,
 				BTEqualStrategyNumber, F_NAMEEQ,
 				CStringGetDatum(tableamname));
-	scandesc = heap_beginscan_catalog(rel, 1, entry);
+	scandesc = table_beginscan_catalog(rel, 1, entry);
 	tuple = heap_getnext(scandesc, ForwardScanDirection);
 
 	/* We assume that there can be at most one matching tuple */
@@ -123,7 +157,7 @@ get_table_am_oid(const char *tableamname, bool missing_ok)
 	else
 		result = InvalidOid;
 
-	heap_endscan(scandesc);
+	table_endscan(scandesc);
 	heap_close(rel, AccessShareLock);
 
 	if (!OidIsValid(result) && !missing_ok)

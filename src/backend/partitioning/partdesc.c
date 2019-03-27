@@ -3,7 +3,7 @@
  * partdesc.c
  *		Support routines for manipulating partition descriptors
  *
- * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -176,48 +176,45 @@ RelationBuildPartitionDesc(Relation rel)
 	/* Now build the actual relcache partition descriptor */
 	rel->rd_pdcxt = AllocSetContextCreate(CacheMemoryContext,
 										  "partition descriptor",
-										  ALLOCSET_DEFAULT_SIZES);
+										  ALLOCSET_SMALL_SIZES);
 	MemoryContextCopyAndSetIdentifier(rel->rd_pdcxt,
 									  RelationGetRelationName(rel));
 
-	oldcxt = MemoryContextSwitchTo(rel->rd_pdcxt);
-	partdesc = (PartitionDescData *) palloc0(sizeof(PartitionDescData));
+	partdesc = (PartitionDescData *)
+		MemoryContextAllocZero(rel->rd_pdcxt, sizeof(PartitionDescData));
 	partdesc->nparts = nparts;
-	/* oids and boundinfo are allocated below. */
-
-	MemoryContextSwitchTo(oldcxt);
-
-	if (nparts == 0)
+	/* If there are no partitions, the rest of the partdesc can stay zero */
+	if (nparts > 0)
 	{
-		rel->rd_partdesc = partdesc;
-		return;
+		/* Create PartitionBoundInfo, using the caller's context. */
+		boundinfo = partition_bounds_create(boundspecs, nparts, key, &mapping);
+
+		/* Now copy all info into relcache's partdesc. */
+		oldcxt = MemoryContextSwitchTo(rel->rd_pdcxt);
+		partdesc->boundinfo = partition_bounds_copy(boundinfo, key);
+		partdesc->oids = (Oid *) palloc(nparts * sizeof(Oid));
+		partdesc->is_leaf = (bool *) palloc(nparts * sizeof(bool));
+		MemoryContextSwitchTo(oldcxt);
+
+		/*
+		 * Assign OIDs from the original array into mapped indexes of the
+		 * result array.  The order of OIDs in the former is defined by the
+		 * catalog scan that retrieved them, whereas that in the latter is
+		 * defined by canonicalized representation of the partition bounds.
+		 *
+		 * Also record leaf-ness of each partition.  For this we use
+		 * get_rel_relkind() which may leak memory, so be sure to run it in
+		 * the caller's context.
+		 */
+		for (i = 0; i < nparts; i++)
+		{
+			int			index = mapping[i];
+
+			partdesc->oids[index] = oids[i];
+			partdesc->is_leaf[index] =
+				(get_rel_relkind(oids[i]) != RELKIND_PARTITIONED_TABLE);
+		}
 	}
-
-	/* First create PartitionBoundInfo */
-	boundinfo = partition_bounds_create(boundspecs, nparts, key, &mapping);
-
-	/* Now copy boundinfo and oids into partdesc. */
-	oldcxt = MemoryContextSwitchTo(rel->rd_pdcxt);
-	partdesc->boundinfo = partition_bounds_copy(boundinfo, key);
-	partdesc->oids = (Oid *) palloc(partdesc->nparts * sizeof(Oid));
-	partdesc->is_leaf = (bool *) palloc(partdesc->nparts * sizeof(bool));
-
-	/*
-	 * Now assign OIDs from the original array into mapped indexes of the
-	 * result array.  The order of OIDs in the former is defined by the
-	 * catalog scan that retrieved them, whereas that in the latter is defined
-	 * by canonicalized representation of the partition bounds.
-	 */
-	for (i = 0; i < partdesc->nparts; i++)
-	{
-		int			index = mapping[i];
-
-		partdesc->oids[index] = oids[i];
-		/* Record if the partition is a leaf partition */
-		partdesc->is_leaf[index] =
-			(get_rel_relkind(oids[i]) != RELKIND_PARTITIONED_TABLE);
-	}
-	MemoryContextSwitchTo(oldcxt);
 
 	rel->rd_partdesc = partdesc;
 }
