@@ -306,11 +306,13 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				create_extension_opt_item alter_extension_opt_item
 
 %type <ival>	opt_lock lock_type cast_context
-%type <ival>	vacuum_option_list vacuum_option_elem
-				analyze_option_list analyze_option_elem
+%type <str>		vac_analyze_option_name
+%type <defelt>	vac_analyze_option_elem
+%type <list>	vac_analyze_option_list
 %type <boolean>	opt_or_replace
 				opt_grant_grant_option opt_grant_admin_option
 				opt_nowait opt_if_exists opt_with_data
+				opt_transaction_chain
 %type <ival>	opt_nowait_or_skip
 
 %type <list>	OptRoleList AlterOptRoleList
@@ -5617,25 +5619,27 @@ CreateAssertionStmt:
  *****************************************************************************/
 
 DefineStmt:
-			CREATE AGGREGATE func_name aggr_args definition
+			CREATE opt_or_replace AGGREGATE func_name aggr_args definition
 				{
 					DefineStmt *n = makeNode(DefineStmt);
 					n->kind = OBJECT_AGGREGATE;
 					n->oldstyle = false;
-					n->defnames = $3;
-					n->args = $4;
-					n->definition = $5;
+					n->replace = $2;
+					n->defnames = $4;
+					n->args = $5;
+					n->definition = $6;
 					$$ = (Node *)n;
 				}
-			| CREATE AGGREGATE func_name old_aggr_definition
+			| CREATE opt_or_replace AGGREGATE func_name old_aggr_definition
 				{
 					/* old-style (pre-8.2) syntax for CREATE AGGREGATE */
 					DefineStmt *n = makeNode(DefineStmt);
 					n->kind = OBJECT_AGGREGATE;
 					n->oldstyle = true;
-					n->defnames = $3;
+					n->replace = $2;
+					n->defnames = $4;
 					n->args = NIL;
-					n->definition = $4;
+					n->definition = $5;
 					$$ = (Node *)n;
 				}
 			| CREATE OPERATOR any_operator definition
@@ -9789,11 +9793,12 @@ UnlistenStmt:
  *****************************************************************************/
 
 TransactionStmt:
-			ABORT_P opt_transaction
+			ABORT_P opt_transaction opt_transaction_chain
 				{
 					TransactionStmt *n = makeNode(TransactionStmt);
 					n->kind = TRANS_STMT_ROLLBACK;
 					n->options = NIL;
+					n->chain = $3;
 					$$ = (Node *)n;
 				}
 			| BEGIN_P opt_transaction transaction_mode_list_or_empty
@@ -9810,25 +9815,28 @@ TransactionStmt:
 					n->options = $3;
 					$$ = (Node *)n;
 				}
-			| COMMIT opt_transaction
+			| COMMIT opt_transaction opt_transaction_chain
 				{
 					TransactionStmt *n = makeNode(TransactionStmt);
 					n->kind = TRANS_STMT_COMMIT;
 					n->options = NIL;
+					n->chain = $3;
 					$$ = (Node *)n;
 				}
-			| END_P opt_transaction
+			| END_P opt_transaction opt_transaction_chain
 				{
 					TransactionStmt *n = makeNode(TransactionStmt);
 					n->kind = TRANS_STMT_COMMIT;
 					n->options = NIL;
+					n->chain = $3;
 					$$ = (Node *)n;
 				}
-			| ROLLBACK opt_transaction
+			| ROLLBACK opt_transaction opt_transaction_chain
 				{
 					TransactionStmt *n = makeNode(TransactionStmt);
 					n->kind = TRANS_STMT_ROLLBACK;
 					n->options = NIL;
+					n->chain = $3;
 					$$ = (Node *)n;
 				}
 			| SAVEPOINT ColId
@@ -9926,6 +9934,12 @@ transaction_mode_list_or_empty:
 			transaction_mode_list
 			| /* EMPTY */
 					{ $$ = NIL; }
+		;
+
+opt_transaction_chain:
+			AND CHAIN		{ $$ = true; }
+			| AND NO CHAIN	{ $$ = false; }
+			| /* EMPTY */	{ $$ = false; }
 		;
 
 
@@ -10478,91 +10492,80 @@ cluster_index_specification:
 VacuumStmt: VACUUM opt_full opt_freeze opt_verbose opt_analyze opt_vacuum_relation_list
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
-					n->options = VACOPT_VACUUM;
+					n->options = NIL;
 					if ($2)
-						n->options |= VACOPT_FULL;
+						n->options = lappend(n->options,
+											 makeDefElem("full", NULL, @2));
 					if ($3)
-						n->options |= VACOPT_FREEZE;
+						n->options = lappend(n->options,
+											 makeDefElem("freeze", NULL, @3));
 					if ($4)
-						n->options |= VACOPT_VERBOSE;
+						n->options = lappend(n->options,
+											 makeDefElem("verbose", NULL, @4));
 					if ($5)
-						n->options |= VACOPT_ANALYZE;
+						n->options = lappend(n->options,
+											 makeDefElem("analyze", NULL, @5));
 					n->rels = $6;
+					n->is_vacuumcmd = true;
 					$$ = (Node *)n;
 				}
-			| VACUUM '(' vacuum_option_list ')' opt_vacuum_relation_list
+			| VACUUM '(' vac_analyze_option_list ')' opt_vacuum_relation_list
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
-					n->options = VACOPT_VACUUM | $3;
+					n->options = $3;
 					n->rels = $5;
+					n->is_vacuumcmd = true;
 					$$ = (Node *) n;
-				}
-		;
-
-vacuum_option_list:
-			vacuum_option_elem								{ $$ = $1; }
-			| vacuum_option_list ',' vacuum_option_elem		{ $$ = $1 | $3; }
-		;
-
-vacuum_option_elem:
-			analyze_keyword		{ $$ = VACOPT_ANALYZE; }
-			| VERBOSE			{ $$ = VACOPT_VERBOSE; }
-			| FREEZE			{ $$ = VACOPT_FREEZE; }
-			| FULL				{ $$ = VACOPT_FULL; }
-			| IDENT
-				{
-					if (strcmp($1, "disable_page_skipping") == 0)
-						$$ = VACOPT_DISABLE_PAGE_SKIPPING;
-					else if (strcmp($1, "skip_locked") == 0)
-						$$ = VACOPT_SKIP_LOCKED;
-					else
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-							 errmsg("unrecognized VACUUM option \"%s\"", $1),
-									 parser_errposition(@1)));
 				}
 		;
 
 AnalyzeStmt: analyze_keyword opt_verbose opt_vacuum_relation_list
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
-					n->options = VACOPT_ANALYZE;
+					n->options = NIL;
 					if ($2)
-						n->options |= VACOPT_VERBOSE;
+						n->options = lappend(n->options,
+											 makeDefElem("verbose", NULL, @2));
 					n->rels = $3;
+					n->is_vacuumcmd = false;
 					$$ = (Node *)n;
 				}
-			| analyze_keyword '(' analyze_option_list ')' opt_vacuum_relation_list
+			| analyze_keyword '(' vac_analyze_option_list ')' opt_vacuum_relation_list
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
-					n->options = VACOPT_ANALYZE | $3;
+					n->options = $3;
 					n->rels = $5;
+					n->is_vacuumcmd = false;
 					$$ = (Node *) n;
 				}
 		;
 
-analyze_option_list:
-			analyze_option_elem								{ $$ = $1; }
-			| analyze_option_list ',' analyze_option_elem	{ $$ = $1 | $3; }
-		;
-
-analyze_option_elem:
-			VERBOSE				{ $$ = VACOPT_VERBOSE; }
-			| IDENT
+vac_analyze_option_list:
+			vac_analyze_option_elem
 				{
-					if (strcmp($1, "skip_locked") == 0)
-						$$ = VACOPT_SKIP_LOCKED;
-					else
-						ereport(ERROR,
-								(errcode(ERRCODE_SYNTAX_ERROR),
-								 errmsg("unrecognized ANALYZE option \"%s\"", $1),
-									 parser_errposition(@1)));
+					$$ = list_make1($1);
+				}
+			| vac_analyze_option_list ',' vac_analyze_option_elem
+				{
+					$$ = lappend($1, $3);
 				}
 		;
 
 analyze_keyword:
 			ANALYZE									{}
 			| ANALYSE /* British */					{}
+		;
+
+vac_analyze_option_elem:
+			vac_analyze_option_name
+				{
+					$$ = makeDefElem($1, NULL, @1);
+				}
+		;
+
+vac_analyze_option_name:
+			NonReservedWord							{ $$ = $1; }
+			| analyze_keyword						{ $$ = "analyze"; }
 		;
 
 opt_analyze:
