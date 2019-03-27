@@ -52,6 +52,7 @@
 #include "catalog/storage.h"
 #include "commands/tablecmds.h"
 #include "commands/event_trigger.h"
+#include "commands/progress.h"
 #include "commands/trigger.h"
 #include "executor/executor.h"
 #include "miscadmin.h"
@@ -59,6 +60,7 @@
 #include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
 #include "parser/parser.h"
+#include "pgstat.h"
 #include "rewrite/rewriteManip.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
@@ -1247,7 +1249,7 @@ index_constraint_create(Relation heapRelation,
 {
 	Oid			namespaceId = RelationGetNamespace(heapRelation);
 	ObjectAddress myself,
-				referenced;
+				idxaddr;
 	Oid			conOid;
 	bool		deferrable;
 	bool		initdeferred;
@@ -1341,15 +1343,9 @@ index_constraint_create(Relation heapRelation,
 	 * Note that the constraint has a dependency on the table, so we don't
 	 * need (or want) any direct dependency from the index to the table.
 	 */
-	myself.classId = RelationRelationId;
-	myself.objectId = indexRelationId;
-	myself.objectSubId = 0;
-
-	referenced.classId = ConstraintRelationId;
-	referenced.objectId = conOid;
-	referenced.objectSubId = 0;
-
-	recordDependencyOn(&myself, &referenced, DEPENDENCY_INTERNAL);
+	ObjectAddressSet(myself, ConstraintRelationId, conOid);
+	ObjectAddressSet(idxaddr, RelationRelationId, indexRelationId);
+	recordDependencyOn(&idxaddr, &myself, DEPENDENCY_INTERNAL);
 
 	/*
 	 * Also, if this is a constraint on a partition, give it partition-type
@@ -1357,7 +1353,8 @@ index_constraint_create(Relation heapRelation,
 	 */
 	if (OidIsValid(parentConstraintId))
 	{
-		ObjectAddressSet(myself, ConstraintRelationId, conOid);
+		ObjectAddress	referenced;
+
 		ObjectAddressSet(referenced, ConstraintRelationId, parentConstraintId);
 		recordDependencyOn(&myself, &referenced, DEPENDENCY_PARTITION_PRI);
 		ObjectAddressSet(referenced, RelationRelationId,
@@ -1444,7 +1441,7 @@ index_constraint_create(Relation heapRelation,
 		table_close(pg_index, RowExclusiveLock);
 	}
 
-	return referenced;
+	return myself;
 }
 
 /*
@@ -1852,7 +1849,6 @@ CompareIndexInfo(IndexInfo *info1, IndexInfo *info2,
 	/* and same number of key attributes */
 	if (info1->ii_NumIndexKeyAttrs != info2->ii_NumIndexKeyAttrs)
 		return false;
-
 
 	/*
 	 * and columns match through the attribute map (actual attribute numbers
@@ -3851,6 +3847,7 @@ reindex_relation(Oid relid, int flags, int options)
 	List	   *indexIds;
 	bool		is_pg_class;
 	bool		result;
+	int			i;
 
 	/*
 	 * Open and lock the relation.  ShareLock is sufficient since we only need
@@ -3938,6 +3935,7 @@ reindex_relation(Oid relid, int flags, int options)
 
 		/* Reindex all the indexes. */
 		doneIndexes = NIL;
+		i = 1;
 		foreach(indexId, indexIds)
 		{
 			Oid			indexOid = lfirst_oid(indexId);
@@ -3955,6 +3953,11 @@ reindex_relation(Oid relid, int flags, int options)
 
 			if (is_pg_class)
 				doneIndexes = lappend_oid(doneIndexes, indexOid);
+
+			/* Set index rebuild count */
+			pgstat_progress_update_param(PROGRESS_CLUSTER_INDEX_REBUILD_COUNT,
+										 i);
+			i++;
 		}
 	}
 	PG_CATCH();

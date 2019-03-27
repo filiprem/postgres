@@ -3746,12 +3746,24 @@ transformPartitionRangeBounds(ParseState *pstate, List *blist,
 			ColumnRef *cref = (ColumnRef *) expr;
 			char *cname = NULL;
 
+			/*
+			 * There should be a single field named either "minvalue" or
+			 * "maxvalue".
+			 */
 			if (list_length(cref->fields) == 1 &&
 				IsA(linitial(cref->fields), String))
 				cname = strVal(linitial(cref->fields));
 
-			Assert(cname != NULL);
-			if (strcmp("minvalue", cname) == 0)
+			if (cname == NULL)
+			{
+				/*
+				 * ColumnRef is not in the desired single-field-name form.
+				 * For consistency between all partition strategies, let the
+				 * expression transformation report any errors rather than
+				 * doing it ourselves.
+				 */
+			}
+			else if (strcmp("minvalue", cname) == 0)
 			{
 				prd = makeNode(PartitionRangeDatum);
 				prd->kind = PARTITION_RANGE_DATUM_MINVALUE;
@@ -3914,12 +3926,12 @@ transformPartitionBoundValue(ParseState *pstate, Node *val,
 	if (!IsA(value, Const))
 		value = (Node *) expression_planner((Expr *) value);
 
-	/* Make sure the expression does not refer to any vars. */
-	if (contain_var_clause(value))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
-				 errmsg("cannot use column references in partition bound expression"),
-				 parser_errposition(pstate, exprLocation(value))));
+	/*
+	 * transformExpr() should have already rejected column references,
+	 * subqueries, aggregates, window functions, and SRFs, based on the
+	 * EXPR_KIND_ for a default expression.
+	 */
+	Assert(!contain_var_clause(value));
 
 	/*
 	 * Evaluate the expression, assigning the partition key's collation to the

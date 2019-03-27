@@ -454,6 +454,138 @@ SELECT '' AS five, * FROM FLOAT8_TBL;
       | -1.2345678901234e-200
 (5 rows)
 
+-- hyperbolic functions
+-- we run these with extra_float_digits = 0 too, since different platforms
+-- tend to produce results that vary in the last place.
+SELECT sinh(float8 '1');
+      sinh       
+-----------------
+ 1.1752011936438
+(1 row)
+
+SELECT cosh(float8 '1');
+       cosh       
+------------------
+ 1.54308063481524
+(1 row)
+
+SELECT tanh(float8 '1');
+       tanh        
+-------------------
+ 0.761594155955765
+(1 row)
+
+SELECT asinh(float8 '1');
+       asinh       
+-------------------
+ 0.881373587019543
+(1 row)
+
+SELECT acosh(float8 '2');
+      acosh       
+------------------
+ 1.31695789692482
+(1 row)
+
+SELECT atanh(float8 '0.5');
+       atanh       
+-------------------
+ 0.549306144334055
+(1 row)
+
+-- test Inf/NaN cases for hyperbolic functions
+SELECT sinh(float8 'infinity');
+   sinh   
+----------
+ Infinity
+(1 row)
+
+SELECT sinh(float8 '-infinity');
+   sinh    
+-----------
+ -Infinity
+(1 row)
+
+SELECT sinh(float8 'nan');
+ sinh 
+------
+  NaN
+(1 row)
+
+SELECT cosh(float8 'infinity');
+   cosh   
+----------
+ Infinity
+(1 row)
+
+SELECT cosh(float8 '-infinity');
+   cosh   
+----------
+ Infinity
+(1 row)
+
+SELECT cosh(float8 'nan');
+ cosh 
+------
+  NaN
+(1 row)
+
+SELECT tanh(float8 'infinity');
+ tanh 
+------
+    1
+(1 row)
+
+SELECT tanh(float8 '-infinity');
+ tanh 
+------
+   -1
+(1 row)
+
+SELECT tanh(float8 'nan');
+ tanh 
+------
+  NaN
+(1 row)
+
+SELECT asinh(float8 'infinity');
+  asinh   
+----------
+ Infinity
+(1 row)
+
+SELECT asinh(float8 '-infinity');
+   asinh   
+-----------
+ -Infinity
+(1 row)
+
+SELECT asinh(float8 'nan');
+ asinh 
+-------
+   NaN
+(1 row)
+
+-- acosh(Inf) should be Inf, but some mingw versions produce NaN, so skip test
+-- SELECT acosh(float8 'infinity');
+SELECT acosh(float8 '-infinity');
+ERROR:  input is out of range
+SELECT acosh(float8 'nan');
+ acosh 
+-------
+   NaN
+(1 row)
+
+SELECT atanh(float8 'infinity');
+ERROR:  input is out of range
+SELECT atanh(float8 '-infinity');
+ERROR:  input is out of range
+SELECT atanh(float8 'nan');
+ atanh 
+-------
+   NaN
+(1 row)
+
 RESET extra_float_digits;
 -- test for over- and underflow
 INSERT INTO FLOAT8_TBL(f1) VALUES ('10e400');
@@ -1065,8 +1197,11 @@ select float8send(flt) as ibits,
 (209 rows)
 
 -- clean up, lest opr_sanity complain
-\set VERBOSITY terse
 drop type xfloat8 cascade;
 NOTICE:  drop cascades to 6 other objects
-\set VERBOSITY default
---
+DETAIL:  drop cascades to function xfloat8in(cstring)
+drop cascades to function xfloat8out(xfloat8)
+drop cascades to cast from xfloat8 to double precision
+drop cascades to cast from double precision to xfloat8
+drop cascades to cast from xfloat8 to bigint
+drop cascades to cast from bigint to xfloat8

@@ -3311,7 +3311,7 @@ pgstat_read_current_status(void)
 			localentry->backendStatus.st_procpid = beentry->st_procpid;
 			if (localentry->backendStatus.st_procpid > 0)
 			{
-				memcpy(&localentry->backendStatus, (char *) beentry, sizeof(PgBackendStatus));
+				memcpy(&localentry->backendStatus, unvolatize(PgBackendStatus *, beentry), sizeof(PgBackendStatus));
 
 				/*
 				 * strcpy is safe even if the string is modified concurrently,
@@ -3622,6 +3622,12 @@ pgstat_get_wait_ipc(WaitEventIPC w)
 			break;
 		case WAIT_EVENT_BTREE_PAGE:
 			event_name = "BtreePage";
+			break;
+		case WAIT_EVENT_CHECKPOINT_DONE:
+			event_name = "CheckpointDone";
+			break;
+		case WAIT_EVENT_CHECKPOINT_START:
+			event_name = "CheckpointStart";
 			break;
 		case WAIT_EVENT_CLOG_GROUP_UPDATE:
 			event_name = "ClogGroupUpdate";
